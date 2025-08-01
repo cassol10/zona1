@@ -199,5 +199,5 @@ setTimeout(() => {
     .bindPopup("Marcador de Teste")
     .openPopup();
   
-  console.log("Marcador de teste adicionado:", testMarker);
+  console.log("Marcador de teste testestestes adicionado:", testMarker);
 }, 1000);
