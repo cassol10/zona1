@@ -9,254 +9,109 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
-            --primary-color: #4361ee;
-            --secondary-color: #3f37c9;
-            --success-color: #4cc9f0;
-            --warning-color: #f8961e;
-            --danger-color: #f94144;
-            --light-bg: #f8f9fa;
-            --dark-bg: #212529;
+            --primary: #4361ee;
+            --success: #4cc9f0;
+            --warning: #f8961e;
+            --danger: #f94144;
         }
-        
         body {
             margin: 0;
             padding: 0;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            overflow: hidden;
         }
-        
-        #app-container {
+        #app {
             display: flex;
             height: 100vh;
         }
-        
+        #sidebar {
+            width: 350px;
+            background: white;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+            overflow-y: auto;
+            z-index: 1000;
+        }
         #map {
             flex: 1;
             height: 100%;
-            transition: margin-left 0.3s;
         }
-        
-        .sidebar {
-            width: 380px;
-            height: 100vh;
-            background: white;
-            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
-            display: flex;
-            flex-direction: column;
-            z-index: 1000;
-        }
-        
-        .sidebar-header {
-            padding: 15px;
-            background: var(--primary-color);
-            color: white;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .sidebar-content {
-            flex: 1;
-            overflow-y: auto;
-            padding: 15px;
-        }
-        
         .form-section {
-            background: var(--light-bg);
-            border-radius: 8px;
             padding: 15px;
-            margin-bottom: 20px;
+            border-bottom: 1px solid #eee;
         }
-        
-        .form-section h5 {
-            color: var(--primary-color);
-            margin-bottom: 15px;
-            font-weight: 600;
-        }
-        
-        .wo-list {
-            flex: 1;
-            overflow-y: auto;
-        }
-        
         .wo-card {
-            border-radius: 8px;
-            margin-bottom: 10px;
-            border: 1px solid #eee;
-            transition: all 0.2s;
+            padding: 12px;
+            border-bottom: 1px solid #eee;
             cursor: pointer;
         }
-        
         .wo-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            background-color: #f8f9fa;
         }
-        
-        .wo-card.aberta {
-            border-left: 4px solid var(--success-color);
-        }
-        
-        .wo-card.pendente {
-            border-left: 4px solid var(--warning-color);
-        }
-        
-        .wo-card.fechada {
-            border-left: 4px solid var(--danger-color);
-        }
-        
         .status-badge {
             font-size: 0.75rem;
-            font-weight: 600;
             padding: 3px 8px;
-            border-radius: 12px;
+            border-radius: 10px;
         }
-        
-        .badge-aberta {
-            background-color: rgba(76, 201, 240, 0.1);
-            color: var(--success-color);
-        }
-        
-        .badge-pendente {
-            background-color: rgba(248, 150, 30, 0.1);
-            color: var(--warning-color);
-        }
-        
-        .badge-fechada {
-            background-color: rgba(249, 65, 68, 0.1);
-            color: var(--danger-color);
-        }
-        
-        .btn-primary {
-            background-color: var(--primary-color);
-            border-color: var(--primary-color);
-        }
-        
-        .btn-primary:hover {
-            background-color: var(--secondary-color);
-            border-color: var(--secondary-color);
-        }
-        
-        .toggle-sidebar {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            z-index: 1001;
-            background: white;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            cursor: pointer;
-        }
-        
-        @media (max-width: 768px) {
-            .sidebar {
-                position: absolute;
-                left: -380px;
-            }
-            .sidebar.open {
-                left: 0;
-            }
-            #map {
-                margin-left: 0;
-            }
+        .aberta { color: var(--success); }
+        .pendente { color: var(--warning); }
+        .fechada { color: var(--danger); }
+        .leaflet-marker-icon {
+            background: none !important;
+            border: none !important;
         }
     </style>
 </head>
 <body>
-    <div id="app-container">
-        <div class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <h5 class="mb-0">Ordens de Serviço</h5>
-                <button class="btn btn-sm btn-light d-lg-none" onclick="toggleSidebar()">
-                    <i class="fas fa-times"></i>
-                </button>
+    <div id="app">
+        <div id="sidebar">
+            <div class="form-section">
+                <h5><i class="fas fa-plus-circle me-2"></i>Nova WO</h5>
+                <form id="woForm">
+                    <div class="mb-3">
+                        <label class="form-label">Número WO*</label>
+                        <input type="text" class="form-control" id="woNumber" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">PDO*</label>
+                        <input type="text" class="form-control" id="pdo" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Coordenadas* (lat, lng)</label>
+                        <input type="text" class="form-control" id="coordinates" placeholder="38.704803, -9.400177" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-save me-2"></i>Salvar
+                    </button>
+                </form>
             </div>
             
-            <div class="sidebar-content">
-                <div class="form-section">
-                    <h5><i class="fas fa-plus-circle me-2"></i>Adicionar WO</h5>
-                    <form id="woForm">
-                        <div class="mb-3">
-                            <label class="form-label">Número WO*</label>
-                            <input type="text" class="form-control" id="woNumber" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">PDO*</label>
-                            <input type="text" class="form-control" id="pdo" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Tipo</label>
-                            <div class="d-flex gap-3">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="type" id="major" value="major" checked>
-                                    <label class="form-check-label" for="major">Major</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="type" id="critical" value="critical">
-                                    <label class="form-check-label" for="critical">Critical</label>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Técnico</label>
-                            <input type="text" class="form-control" id="technician">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Coordenadas* (lat, lng)</label>
-                            <input type="text" class="form-control" id="coordinates" placeholder="38.704803, -9.400177" required>
-                        </div>
-                        <button type="submit" class="btn btn-primary w-100">
-                            <i class="fas fa-save me-2"></i>Salvar WO
-                        </button>
-                    </form>
-                </div>
-                
-                <div class="form-section">
-                    <h5><i class="fas fa-filter me-2"></i>Filtrar WOs</h5>
-                    <form id="filterForm">
-                        <div class="mb-3">
-                            <label class="form-label">Número WO</label>
-                            <input type="text" class="form-control" id="filterWoNumber">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">PDO</label>
-                            <input type="text" class="form-control" id="filterPdo">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Status</label>
-                            <select class="form-select" id="filterStatus">
-                                <option value="">Todos</option>
-                                <option value="aberta">Aberta</option>
-                                <option value="pendente">Pendente</option>
-                                <option value="fechada">Fechada</option>
-                            </select>
-                        </div>
-                        <div class="d-grid gap-2">
-                            <button type="submit" class="btn btn-outline-primary">
-                                <i class="fas fa-search me-2"></i>Filtrar
-                            </button>
-                            <button type="button" id="exportBtn" class="btn btn-outline-success">
-                                <i class="fas fa-file-export me-2"></i>Exportar CSV
-                            </button>
-                        </div>
-                    </form>
-                </div>
-                
-                <div>
-                    <h5><i class="fas fa-list me-2"></i>Lista de WOs</h5>
-                    <div id="woList" class="wo-list mt-3"></div>
-                </div>
+            <div class="form-section">
+                <h5><i class="fas fa-filter me-2"></i>Filtrar</h5>
+                <form id="filterForm">
+                    <div class="mb-3">
+                        <label class="form-label">Status</label>
+                        <select class="form-select" id="filterStatus">
+                            <option value="">Todos</option>
+                            <option value="aberta">Aberta</option>
+                            <option value="pendente">Pendente</option>
+                            <option value="fechada">Fechada</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-outline-primary w-100 mb-2">
+                        <i class="fas fa-search me-2"></i>Filtrar
+                    </button>
+                    <button type="button" id="exportBtn" class="btn btn-outline-success w-100">
+                        <i class="fas fa-file-export me-2"></i>Exportar
+                    </button>
+                </form>
+            </div>
+            
+            <div id="woList" style="padding: 15px;">
+                <h5><i class="fas fa-list me-2"></i>Ordens</h5>
+                <div id="woItems"></div>
             </div>
         </div>
         
         <div id="map"></div>
-        <div class="toggle-sidebar d-lg-none" id="toggleSidebarBtn" onclick="toggleSidebar()">
-            <i class="fas fa-bars"></i>
-        </div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
