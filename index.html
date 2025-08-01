@@ -7,186 +7,121 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body, html {
-            height: 100%;
+        body {
             margin: 0;
             padding: 0;
             font-family: Arial, sans-serif;
         }
         #map {
-            height: 100%;
-            flex-grow: 1;
+            height: 100vh;
+            width: 100%;
         }
         .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
             width: 350px;
             height: 100vh;
             overflow-y: auto;
             background-color: #f8f9fa;
-            padding: 20px;
+            padding: 15px;
             box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            z-index: 1000;
         }
-        .container-app {
-            display: flex;
-            height: 100vh;
-        }
-        .form-group.required label:after {
-            content: " *";
-            color: red;
-        }
-        .wo-card {
+        .form-container {
             margin-bottom: 15px;
-            border-radius: 5px;
-            border-left: 4px solid;
         }
-        .wo-card.aberta {
-            border-left-color: #28a745;
+        .wo-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
         }
-        .wo-card.pendente {
-            border-left-color: #ffc107;
+        .wo-item:hover {
+            background-color: #f0f0f0;
         }
-        .wo-card.fechada {
-            border-left-color: #dc3545;
+        .status-aberta {
+            color: #28a745;
+        }
+        .status-pendente {
+            color: #ffc107;
+        }
+        .status-fechada {
+            color: #dc3545;
+        }
+        .btn-close-sidebar {
+            position: absolute;
+            top: 10px;
+            right: 10px;
         }
     </style>
 </head>
 <body>
-    <div class="container-app">
-        <div class="sidebar">
-            <h2 class="mb-4">Gerenciamento de WOs</h2>
-            
-            <div class="card mb-4">
-                <div class="card-body">
-                    <h5 class="card-title">Adicionar WO</h5>
-                    <form id="woForm">
-                        <div class="form-group required mb-3">
-                            <label for="woNumber" class="form-label">Número WO</label>
-                            <input type="text" class="form-control" id="woNumber" required>
-                        </div>
-                        <div class="form-group required mb-3">
-                            <label for="pdo" class="form-label">PDO</label>
-                            <input type="text" class="form-control" id="pdo" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Tipo</label>
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="type" id="major" value="major" checked>
-                                <label class="form-check-label" for="major">Major</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="type" id="critical" value="critical">
-                                <label class="form-check-label" for="critical">Critical</label>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label for="technician" class="form-label">Nome do Técnico</label>
-                            <input type="text" class="form-control" id="technician">
-                        </div>
-                        <div class="form-group required mb-3">
-                            <label for="coordinates" class="form-label">Coordenadas (lat, lng)</label>
-                            <input type="text" class="form-control" id="coordinates" placeholder="38.704803, -9.400177" required>
-                        </div>
-                        <button type="submit" class="btn btn-primary w-100">Adicionar WO</button>
-                    </form>
+    <div class="sidebar">
+        <button class="btn btn-sm btn-close-sidebar d-lg-none" onclick="toggleSidebar()">×</button>
+        <h4 class="mb-3">Adicionar WO</h4>
+        <div class="form-container">
+            <form id="woForm">
+                <div class="mb-2">
+                    <label class="form-label">Número WO*</label>
+                    <input type="text" class="form-control" id="woNumber" required>
                 </div>
-            </div>
-
-            <div class="card mb-4">
-                <div class="card-body">
-                    <h5 class="card-title">Filtrar WOs</h5>
-                    <form id="filterForm">
-                        <div class="mb-3">
-                            <label for="filterWoNumber" class="form-label">Número WO</label>
-                            <input type="text" class="form-control" id="filterWoNumber">
-                        </div>
-                        <div class="mb-3">
-                            <label for="filterPdo" class="form-label">PDO</label>
-                            <input type="text" class="form-control" id="filterPdo">
-                        </div>
-                        <div class="mb-3">
-                            <label for="filterStatus" class="form-label">Status</label>
-                            <select class="form-select" id="filterStatus">
-                                <option value="">Todos</option>
-                                <option value="aberta">Aberta (Verde)</option>
-                                <option value="pendente">Pendente (Amarelo)</option>
-                                <option value="fechada">Fechada (Vermelho)</option>
-                            </select>
-                        </div>
-                        <div class="d-grid gap-2">
-                            <button type="submit" class="btn btn-secondary">Filtrar</button>
-                            <button type="button" id="exportBtn" class="btn btn-success">Exportar para CSV</button>
-                            <button type="button" id="listAllBtn" class="btn btn-outline-primary">Listar Todas</button>
-                        </div>
-                    </form>
+                <div class="mb-2">
+                    <label class="form-label">PDO*</label>
+                    <input type="text" class="form-control" id="pdo" required>
                 </div>
-            </div>
-
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title">Lista de WOs</h5>
-                    <div id="woList"></div>
+                <div class="mb-2">
+                    <label class="form-label">Tipo</label>
+                    <div>
+                        <input type="radio" id="major" name="type" value="major" checked>
+                        <label for="major" class="me-2">Major</label>
+                        <input type="radio" id="critical" name="type" value="critical">
+                        <label for="critical">Critical</label>
+                    </div>
                 </div>
-            </div>
+                <div class="mb-2">
+                    <label class="form-label">Técnico</label>
+                    <input type="text" class="form-control" id="technician">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Coordenadas* (lat, lng)</label>
+                    <input type="text" class="form-control" id="coordinates" placeholder="38.704803, -9.400177" required>
+                </div>
+                <button type="submit" class="btn btn-primary w-100">Adicionar</button>
+            </form>
         </div>
 
-        <div id="map"></div>
+        <h4 class="mb-3">Filtrar WOs</h4>
+        <div class="form-container">
+            <form id="filterForm">
+                <div class="mb-2">
+                    <label class="form-label">Número WO</label>
+                    <input type="text" class="form-control" id="filterWoNumber">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">PDO</label>
+                    <input type="text" class="form-control" id="filterPdo">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Status</label>
+                    <select class="form-select" id="filterStatus">
+                        <option value="">Todos</option>
+                        <option value="aberta">Aberta</option>
+                        <option value="pendente">Pendente</option>
+                        <option value="fechada">Fechada</option>
+                    </select>
+                </div>
+                <div class="d-grid gap-2">
+                    <button type="submit" class="btn btn-secondary">Filtrar</button>
+                    <button type="button" id="exportBtn" class="btn btn-success">Exportar CSV</button>
+                </div>
+            </form>
+        </div>
+
+        <h4 class="mb-3">Lista de WOs</h4>
+        <div id="woList" class="list-group"></div>
     </div>
 
-    <!-- Modal de Edição -->
-    <div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Editar WO</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="editForm">
-                        <input type="hidden" id="editId">
-                        <div class="form-group required mb-3">
-                            <label for="editWoNumber" class="form-label">Número WO</label>
-                            <input type="text" class="form-control" id="editWoNumber" required>
-                        </div>
-                        <div class="form-group required mb-3">
-                            <label for="editPdo" class="form-label">PDO</label>
-                            <input type="text" class="form-control" id="editPdo" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Tipo</label>
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="editType" id="editMajor" value="major">
-                                <label class="form-check-label" for="editMajor">Major</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="editType" id="editCritical" value="critical">
-                                <label class="form-check-label" for="editCritical">Critical</label>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label for="editTechnician" class="form-label">Nome do Técnico</label>
-                            <input type="text" class="form-control" id="editTechnician">
-                        </div>
-                        <div class="form-group required mb-3">
-                            <label for="editCoordinates" class="form-label">Coordenadas</label>
-                            <input type="text" class="form-control" id="editCoordinates" required>
-                        </div>
-                        <div class="mb-3">
-                            <label for="editStatus" class="form-label">Status</label>
-                            <select class="form-select" id="editStatus">
-                                <option value="aberta">Aberta (Verde)</option>
-                                <option value="pendente">Pendente (Amarelo)</option>
-                                <option value="fechada">Fechada (Vermelho)</option>
-                            </select>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-danger" id="deleteBtn">Excluir</button>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-primary" id="saveEditBtn">Salvar</button>
-                </div>
-            </div>
-        </div>
-    </div>
+    <div id="map"></div>
 
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
