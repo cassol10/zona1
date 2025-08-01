@@ -1,55 +1,90 @@
-// Inicialização do mapa
-const map = L.map('map').setView([38.7223, -9.1393], 13);
+// Verifica se o Firebase já foi inicializado
+if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+}
 
-// Camada do mapa
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-}).addTo(map);
+// Inicialização do mapa com fallback
+function initMap() {
+    const map = L.map('map').setView([38.7223, -9.1393], 13);
+    
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
 
-// Referência ao banco de dados
-const db = firebase.database();
-const woRef = db.ref('workOrders');
+    return map;
+}
 
-// Ícones personalizados
+// Variáveis globais
+let map;
+const markers = {};
+let mapInitialized = false;
+
+// Ícones personalizados corrigidos
 const createCustomIcon = (color) => {
-    return L.divIcon({
-        className: 'custom-marker',
-        html: `<div style="background-color:${color};width:24px;height:24px;border-radius:50%;border:2px solid white;display:flex;align-items:center;justify-content:center;color:white;font-weight:bold;">WO</div>`,
-        iconSize: [24, 24],
-        iconAnchor: [12, 12]
+    return new L.Icon({
+        iconUrl: `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' fill='${encodeURIComponent(color)}'><path d='M16 0c-5.523 0-10 4.477-10 10 0 10 10 22 10 22s10-12 10-22c0-5.523-4.477-10-10-10zm0 16c-3.314 0-6-2.686-6-6s2.686-6 6-6 6 2.686 6 6-2.686 6-6 6z'/></svg>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 32],
+        popupAnchor: [0, -32]
     });
 };
 
-const icons = {
-    aberta: createCustomIcon('#4cc9f0'),
-    pendente: createCustomIcon('#f8961e'),
-    fechada: createCustomIcon('#f94144')
+const statusColors = {
+    aberta: '#4cc9f0',
+    pendente: '#f8961e',
+    fechada: '#f94144'
 };
 
-// Armazenamento de marcadores
-const markers = {};
+// Inicialização da aplicação
+document.addEventListener('DOMContentLoaded', () => {
+    try {
+        map = initMap();
+        mapInitialized = true;
+        loadWorkOrders();
+        
+        // Verificação do container do mapa
+        if (!document.getElementById('map')) {
+            console.error('Elemento do mapa não encontrado');
+            return;
+        }
 
-// Adicionar nova WO
-document.getElementById('woForm').addEventListener('submit', (e) => {
+        // Eventos
+        document.getElementById('woForm').addEventListener('submit', addWorkOrder);
+        document.getElementById('filterForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            loadWorkOrders();
+        });
+        document.getElementById('exportBtn').addEventListener('click', exportToCSV);
+
+    } catch (error) {
+        console.error('Erro na inicialização:', error);
+    }
+});
+
+// Função para adicionar WO corrigida
+async function addWorkOrder(e) {
     e.preventDefault();
     
+    if (!mapInitialized) {
+        console.error('Mapa não inicializado');
+        return;
+    }
+
     const woNumber = document.getElementById('woNumber').value.trim();
     const pdo = document.getElementById('pdo').value.trim();
     const coordinatesInput = document.getElementById('coordinates').value.trim();
-    
-    // Validação dos campos obrigatórios
+
     if (!woNumber || !pdo || !coordinatesInput) {
         showToast('Preencha todos os campos obrigatórios', 'warning');
         return;
     }
-    
-    // Validação das coordenadas
+
     const coords = coordinatesInput.split(',').map(c => parseFloat(c.trim()));
     if (coords.length !== 2 || isNaN(coords[0]) || isNaN(coords[1])) {
-        showToast('Formato de coordenadas inválido. Use: lat, lng', 'warning');
+        showToast('Coordenadas inválidas. Use: lat, lng', 'warning');
         return;
     }
-    
+
     const newWo = {
         woNumber,
         pdo,
@@ -60,89 +95,98 @@ document.getElementById('woForm').addEventListener('submit', (e) => {
         status: 'aberta',
         createdAt: firebase.database.ServerValue.TIMESTAMP
     };
-    
-    woRef.push(newWo)
-        .then(() => {
-            document.getElementById('woForm').reset();
-            // Centralizar no novo marcador
-            map.setView([coords[0], coords[1]], 15);
-        })
-        .catch(error => {
-            console.error('Erro ao salvar WO:', error);
-            showToast('Erro ao salvar WO', 'danger');
-        });
-});
 
-// Carregar WOs
+    try {
+        await woRef.push(newWo);
+        document.getElementById('woForm').reset();
+        map.setView([coords[0], coords[1]], 15);
+        showToast('WO adicionada com sucesso!', 'success');
+    } catch (error) {
+        console.error('Erro ao salvar WO:', error);
+        showToast('Erro ao salvar WO', 'danger');
+    }
+}
+
+// Função para carregar WOs com correções
 function loadWorkOrders() {
+    if (!mapInitialized) return;
+
     const filterWoNumber = document.getElementById('filterWoNumber').value.toLowerCase();
     const filterPdo = document.getElementById('filterPdo').value.toLowerCase();
     const filterStatus = document.getElementById('filterStatus').value;
-    
+
     woRef.on('value', (snapshot) => {
         const woList = document.getElementById('woList');
         woList.innerHTML = '';
-        
-        // Limpar marcadores existentes
-        Object.values(markers).forEach(marker => map.removeLayer(marker));
-        
+
+        // Limpar marcadores antigos
+        Object.values(markers).forEach(marker => {
+            if (marker && map.removeLayer) {
+                map.removeLayer(marker);
+            }
+        });
+
         if (!snapshot.exists()) {
             woList.innerHTML = '<div class="text-center py-3 text-muted">Nenhuma WO encontrada</div>';
             return;
         }
-        
+
         snapshot.forEach((childSnapshot) => {
             const wo = childSnapshot.val();
             const woId = childSnapshot.key;
-            
+
             // Aplicar filtros
             if (filterWoNumber && !wo.woNumber.toLowerCase().includes(filterWoNumber)) return;
             if (filterPdo && !wo.pdo.toLowerCase().includes(filterPdo)) return;
             if (filterStatus && wo.status !== filterStatus) return;
-            
-            // Criar marcador no mapa
-            const marker = L.marker([wo.lat, wo.lng], {
-                icon: icons[wo.status] || icons.aberta
-            }).addTo(map);
-            
-            // Adicionar popup ao marcador
-            marker.bindPopup(`
-                <div class="wo-popup">
-                    <h6>WO: ${wo.woNumber}</h6>
-                    <p><strong>PDO:</strong> ${wo.pdo}</p>
-                    <p><strong>Tipo:</strong> ${wo.type}</p>
-                    <p><strong>Técnico:</strong> ${wo.technician}</p>
-                    <p><strong>Status:</strong> <span class="badge ${getStatusBadgeClass(wo.status)}">${wo.status}</span></p>
-                </div>
-            `);
-            
-            markers[woId] = marker;
-            
-            // Adicionar card à lista
-            const woCard = document.createElement('div');
-            woCard.className = `wo-card ${wo.status}`;
-            woCard.innerHTML = `
-                <div class="p-3">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h6 class="mb-0">${wo.woNumber}</h6>
-                        <span class="status-badge ${getStatusBadgeClass(wo.status)}">${wo.status.toUpperCase()}</span>
+
+            // Criar marcador
+            try {
+                const marker = L.marker([wo.lat, wo.lng], {
+                    icon: createCustomIcon(statusColors[wo.status] || statusColors.aberta)
+                }).addTo(map);
+
+                marker.bindPopup(`
+                    <div class="wo-popup">
+                        <h6>${wo.woNumber}</h6>
+                        <p><strong>Status:</strong> <span style="color:${statusColors[wo.status]}">${wo.status}</span></p>
+                        <p><strong>PDO:</strong> ${wo.pdo}</p>
+                        <p><strong>Técnico:</strong> ${wo.technician}</p>
                     </div>
-                    <div class="text-muted small mb-1"><strong>PDO:</strong> ${wo.pdo}</div>
-                    <div class="text-muted small mb-1"><strong>Técnico:</strong> ${wo.technician}</div>
-                    <div class="text-muted small"><strong>Local:</strong> ${wo.lat.toFixed(6)}, ${wo.lng.toFixed(6)}</div>
-                </div>
-            `;
-            
-            // Evento para centralizar no marcador quando clicar no card
-            woCard.addEventListener('click', () => {
-                map.setView([wo.lat, wo.lng], 15);
-                marker.openPopup();
-            });
-            
-            woList.appendChild(woCard);
+                `);
+
+                markers[woId] = marker;
+
+                // Adicionar à lista
+                const woCard = document.createElement('div');
+                woCard.className = `wo-card ${wo.status}`;
+                woCard.innerHTML = `
+                    <div class="p-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="mb-0">${wo.woNumber}</h6>
+                            <span class="status-badge ${getStatusBadgeClass(wo.status)}">
+                                ${wo.status.toUpperCase()}
+                            </span>
+                        </div>
+                        <div class="text-muted small mb-1"><strong>PDO:</strong> ${wo.pdo}</div>
+                        <div class="text-muted small"><strong>Local:</strong> ${wo.lat.toFixed(6)}, ${wo.lng.toFixed(6)}</div>
+                    </div>
+                `;
+
+                woCard.addEventListener('click', () => {
+                    map.setView([wo.lat, wo.lng], 15);
+                    marker.openPopup();
+                });
+
+                woList.appendChild(woCard);
+            } catch (error) {
+                console.error('Erro ao criar marcador:', error);
+            }
         });
     });
 }
+
+// Restante do código permanece igual...
 
 // Funções auxiliares
 function getStatusBadgeClass(status) {
