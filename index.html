@@ -2,1142 +2,156 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mapa Interativo de OS - Versão 2</title>
-    
-    <!-- Leaflet CSS -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa Interativo de WOs</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-    
-    <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        :root {
-            --color-aberta: #3498db;
-            --color-pendente: #f39c12;
-            --color-fechada: #e74c3c;
-            --color-major: #9b59b6;
-            --color-critical: #e74c3c;
-            --sidebar-width: 400px;
-        }
-        
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            height: 100vh;
-            overflow: hidden;
-        }
-        
-        #app-container {
-            display: flex;
-            height: 100%;
-            position: relative;
-        }
-        
-        /* Sidebar Styles */
-        #sidebar {
-            width: var(--sidebar-width);
-            background: #f5f7fa;
-            border-right: 1px solid #ddd;
-            display: flex;
-            flex-direction: column;
-            transition: transform 0.3s ease;
-            z-index: 1000;
-            min-width: 300px;
-            max-width: 90%;
-            resize: horizontal;
-            overflow: auto;
-        }
-        
-        #sidebar.collapsed {
-            transform: translateX(calc(-1 * var(--sidebar-width)));
-        }
-        
-        .sidebar-header {
-            padding: 15px;
-            background: #2c3e50;
-            color: white;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-        }
-        
-        .sidebar-title {
-            font-size: 1.2rem;
-            font-weight: bold;
-        }
-        
-        .toggle-sidebar {
-            background: none;
-            border: none;
-            color: white;
-            font-size: 1.2rem;
-            cursor: pointer;
-        }
-        
-        /* Search Bar */
-        #search-container {
-            padding: 10px;
-            background: #ecf0f1;
-            position: sticky;
-            top: 0;
-            z-index: 5;
-        }
-        
-        #search-input {
-            width: 100%;
-            padding: 8px 12px;
-            border: 1px solid #bdc3c7;
-            border-radius: 4px;
-            font-size: 0.9rem;
-        }
-        
-        /* Work Orders List */
-        #work-orders-list {
-            flex: 1;
-            overflow-y: auto;
-            padding: 10px;
-        }
-        
-        .work-order-item {
-            background: white;
-            border-radius: 8px;
-            padding: 12px;
-            margin-bottom: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            cursor: pointer;
-            transition: all 0.2s;
-            border-left: 4px solid var(--color-aberta);
-            position: relative;
-        }
-        
-        .work-order-item.pendente {
-            border-left-color: var(--color-pendente);
-        }
-        
-        .work-order-item.fechada {
-            border-left-color: var(--color-fechada);
-        }
-        
-        .work-order-item:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-        }
-        
-        .wo-header {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 5px;
-        }
-        
-        .wo-number {
-            font-weight: bold;
-            color: #2c3e50;
-        }
-        
-        .wo-status {
-            font-size: 0.8rem;
-            padding: 3px 10px;
-            border-radius: 12px;
-            background: var(--color-aberta);
-            color: white;
-            font-weight: bold;
-        }
-        
-        .work-order-item.pendente .wo-status {
-            background: var(--color-pendente);
-        }
-        
-        .work-order-item.fechada .wo-status {
-            background: var(--color-fechada);
-        }
-        
-        .wo-details {
-            font-size: 0.9rem;
-            color: #7f8c8d;
-            margin-bottom: 5px;
-        }
-        
-        .wo-service-type {
-            display: inline-block;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-size: 0.8rem;
-            margin-top: 5px;
-        }
-        
-        .service-major {
-            background-color: var(--color-major);
-            color: white;
-        }
-        
-        .service-critical {
-            background-color: var(--color-critical);
-            color: white;
-        }
-        
-        .wo-technician {
-            font-size: 0.85rem;
-            color: #3498db;
-            font-weight: 500;
-            margin-top: 5px;
-        }
-        
-        .action-btn {
-            position: absolute;
-            top: 5px;
-            right: 5px;
-            background: none;
-            border: none;
-            cursor: pointer;
-            font-size: 0.9rem;
-        }
-        
-        .edit-btn {
-            right: 30px;
-            color: #3498db;
-        }
-        
-        .delete-btn {
-            color: #e74c3c;
-        }
-        
-        /* Form Styles */
-        #add-order-form {
-            padding: 15px;
-            background: #ecf0f1;
-            border-top: 1px solid #ddd;
-        }
-        
-        .form-group {
-            margin-bottom: 12px;
-        }
-        
-        .form-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 600;
-            color: #34495e;
-            font-size: 0.9rem;
-        }
-        
-        .form-group input, .form-group select {
-            width: 100%;
-            padding: 8px 12px;
-            border: 1px solid #bdc3c7;
-            border-radius: 4px;
-            font-size: 0.9rem;
-        }
-        
-        .radio-group {
-            display: flex;
-            gap: 15px;
-            margin: 10px 0;
-        }
-        
-        .radio-option {
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-        
-        .combined-coords {
-            display: flex;
-            gap: 8px;
-        }
-        
-        .combined-coords input {
-            flex: 1;
-        }
-        
-        .paste-btn {
-            padding: 0 12px;
-            background: #3498db;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-        }
-        
-        .form-actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 15px;
-        }
-        
-        button {
-            padding: 10px 15px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: background 0.2s;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-        
-        .btn-primary {
-            background: #3498db;
-            color: white;
-            flex: 1;
-        }
-        
-        .btn-primary:hover {
-            background: #2980b9;
-        }
-        
-        .btn-secondary {
-            background: #95a5a6;
-            color: white;
-        }
-        
-        .btn-secondary:hover {
-            background: #7f8c8d;
-        }
-        
-        /* Map Styles */
-        #map {
-            flex: 1;
-            height: 100%;
-            z-index: 1;
-        }
-        
-        /* Popup Styles */
-        .leaflet-popup-content {
-            min-width: 250px;
-            padding: 10px;
-        }
-        
-        .popup-title {
-            font-weight: bold;
-            margin-bottom: 5px;
-            color: #2c3e50;
-        }
-        
-        .popup-status {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 3px;
-            color: white;
-            font-weight: bold;
-            font-size: 0.8rem;
-            margin: 5px 0;
-        }
-        
-        .status-aberta {
-            background: var(--color-aberta);
-        }
-        
-        .status-pendente {
-            background: var(--color-pendente);
-        }
-        
-        .status-fechada {
-            background: var(--color-fechada);
-        }
-        
-        .popup-service-type {
-            margin: 5px 0;
-            font-size: 0.9rem;
-        }
-        
-        .popup-technician {
-            margin: 5px 0;
-            font-size: 0.9rem;
-        }
-        
-        .gmaps-link {
-            display: inline-block;
-            margin-top: 8px;
-            color: #3498db;
-            text-decoration: none;
-            font-weight: 500;
-        }
-        
-        .gmaps-link:hover {
-            text-decoration: underline;
-        }
-        
-        .popup-actions {
-            margin-top: 10px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 5px;
-        }
-        
-        .popup-btn {
-            padding: 5px 10px;
-            font-size: 0.8rem;
-            border-radius: 3px;
-            flex: 1;
-            min-width: 70px;
-            text-align: center;
-        }
-        
-        /* Mobile Styles */
-        @media (max-width: 768px) {
-            #sidebar {
-                position: absolute;
-                width: 90%;
-                height: 100%;
-                box-shadow: 2px 0 10px rgba(0,0,0,0.1);
-                resize: none;
-            }
-            
-            #mobile-toggle {
-                position: absolute;
-                top: 15px;
-                left: 15px;
-                z-index: 1001;
-                background: rgba(44, 62, 80, 0.9);
-                color: white;
-                width: 45px;
-                height: 45px;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            }
-            
-            .leaflet-popup-content {
-                width: 280px !important;
-            }
-        }
-        
-        /* Resize handle for sidebar */
-        #sidebar {
-            position: relative;
-        }
-        
-        #sidebar::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            right: 0;
-            width: 10px;
-            height: 100%;
-            cursor: col-resize;
-            z-index: 10;
-        }
+        #map { height: 100vh; }
+        .sidebar { height: 100vh; overflow-y: auto; }
+        .form-container { padding: 20px; }
+        .wo-marker.green { color: green; }
+        .wo-marker.yellow { color: yellow; }
+        .wo-marker.red { color: red; }
     </style>
 </head>
 <body>
-    <div id="app-container">
-        <!-- Sidebar -->
-        <div id="sidebar">
-            <div class="sidebar-header">
-                <span class="sidebar-title">Ordens de Serviço v2</span>
-                <button class="toggle-sidebar" onclick="toggleSidebar()">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            
-            <!-- Search Bar -->
-            <div id="search-container">
-                <input type="text" id="search-input" placeholder="Pesquisar por WO ou PDO...">
-            </div>
-            
-            <!-- Work Orders List -->
-            <div id="work-orders-list"></div>
-            
-            <!-- Add/Edit Form -->
-            <div id="order-form-container">
-                <div id="add-order-form">
-                    <h3 style="margin-bottom: 15px; color: #2c3e50;" id="form-title">Adicionar Nova OS</h3>
-                    <div class="form-group">
-                        <label for="new-wo">Número WO:</label>
-                        <input type="text" id="new-wo" placeholder="Ex: WO 12345678">
-                    </div>
-                    <div class="form-group">
-                        <label for="new-pdo">PDO:</label>
-                        <input type="text" id="new-pdo" placeholder="Ex: PDO-92-LOU-0161.33">
-                    </div>
-                    <div class="form-group">
-                        <label>Tipo de Serviço:</label>
-                        <div class="radio-group">
-                            <label class="radio-option">
-                                <input type="radio" name="serviceType" value="major" checked> Major
-                            </label>
-                            <label class="radio-option">
-                                <input type="radio" name="serviceType" value="critical"> Critical
-                            </label>
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-3 sidebar bg-light">
+                <div class="form-container">
+                    <h2>Adicionar WO</h2>
+                    <form id="woForm">
+                        <div class="mb-3">
+                            <label for="woNumber" class="form-label">Número WO:</label>
+                            <input type="text" class="form-control" id="woNumber" required>
                         </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="new-technician">Técnico:</label>
-                        <input type="text" id="new-technician" placeholder="Ex: João Silva">
-                    </div>
-                    <div class="form-group">
-                        <label for="new-coords">Coordenadas:</label>
-                        <div class="combined-coords">
-                            <input type="text" id="new-coords" placeholder="Ex: 38.817256, -9.165423">
-                            <button class="paste-btn" onclick="pasteCoords()" title="Colar coordenadas">
-                                <i class="fas fa-paste"></i>
-                            </button>
+                        <div class="mb-3">
+                            <label for="pdo" class="form-label">PDO:</label>
+                            <input type="text" class="form-control" id="pdo" required>
                         </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="new-status">Status:</label>
-                        <select id="new-status">
-                            <option value="aberta">Aberta</option>
-                            <option value="pendente">Pendente</option>
-                            <option value="fechada">Fechada</option>
-                        </select>
-                    </div>
-                    <div class="form-actions">
-                        <button class="btn-primary" id="submit-btn" onclick="submitOrderForm()">
-                            <i class="fas fa-plus"></i> Adicionar
-                        </button>
-                        <button class="btn-secondary" onclick="clearForm()">
-                            <i class="fas fa-times"></i> Limpar
-                        </button>
-                        <button class="btn-secondary" id="cancel-edit-btn" style="display: none;" onclick="cancelEdit()">
-                            <i class="fas fa-times"></i> Cancelar
-                        </button>
-                    </div>
+                        <div class="mb-3">
+                            <label class="form-label">Tipo:</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="type" id="major" value="major" checked>
+                                <label class="form-check-label" for="major">Major</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="type" id="critical" value="critical">
+                                <label class="form-check-label" for="critical">Critical</label>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="technician" class="form-label">Nome do Técnico:</label>
+                            <input type="text" class="form-control" id="technician" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="coordinates" class="form-label">Coordenadas (lat, lng):</label>
+                            <input type="text" class="form-control" id="coordinates" placeholder="38.704803, -9.400177" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Adicionar WO</button>
+                    </form>
+
+                    <hr>
+
+                    <h2>Filtrar WOs</h2>
+                    <form id="filterForm">
+                        <div class="mb-3">
+                            <label for="filterWoNumber" class="form-label">Número WO:</label>
+                            <input type="text" class="form-control" id="filterWoNumber">
+                        </div>
+                        <div class="mb-3">
+                            <label for="filterPdo" class="form-label">PDO:</label>
+                            <input type="text" class="form-control" id="filterPdo">
+                        </div>
+                        <div class="mb-3">
+                            <label for="filterStatus" class="form-label">Status:</label>
+                            <select class="form-select" id="filterStatus">
+                                <option value="">Todos</option>
+                                <option value="aberta">Aberta (Verde)</option>
+                                <option value="pendente">Pendente (Amarelo)</option>
+                                <option value="fechada">Fechada (Vermelho)</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-secondary">Filtrar</button>
+                        <button type="button" id="exportBtn" class="btn btn-success">Exportar para CSV</button>
+                        <button type="button" id="listAllBtn" class="btn btn-info">Listar Todas</button>
+                    </form>
+
+                    <hr>
+
+                    <h2>Lista de WOs</h2>
+                    <div id="woList"></div>
                 </div>
             </div>
-        </div>
-        
-        <!-- Map -->
-        <div id="map"></div>
-        
-        <!-- Mobile Toggle Button -->
-        <button id="mobile-toggle" onclick="toggleSidebar()" style="display: none;">
-            <i class="fas fa-bars"></i>
-        </button>
-        
-        <!-- Filters -->
-        <div id="filters" style="position: absolute; top: 10px; right: 10px; z-index: 1000; background: white; padding: 10px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.2);">
-            <div style="margin-bottom: 5px; font-weight: bold;">Filtrar por Status:</div>
-            <label><input type="checkbox" checked id="filter-abertas" onchange="filterMarkers()"> Aberta</label>
-            <label><input type="checkbox" checked id="filter-pendentes" onchange="filterMarkers()"> Pendente</label>
-            <label><input type="checkbox" checked id="filter-fechadas" onchange="filterMarkers()"> Fechada</label>
+            <div class="col-md-9 px-0">
+                <div id="map"></div>
+            </div>
         </div>
     </div>
 
-    <!-- Leaflet JS -->
+    <!-- Modal para edição -->
+    <div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Editar WO</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editForm">
+                        <input type="hidden" id="editId">
+                        <div class="mb-3">
+                            <label for="editWoNumber" class="form-label">Número WO:</label>
+                            <input type="text" class="form-control" id="editWoNumber" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editPdo" class="form-label">PDO:</label>
+                            <input type="text" class="form-control" id="editPdo" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Tipo:</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="editType" id="editMajor" value="major" checked>
+                                <label class="form-check-label" for="editMajor">Major</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="editType" id="editCritical" value="critical">
+                                <label class="form-check-label" for="editCritical">Critical</label>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editTechnician" class="form-label">Nome do Técnico:</label>
+                            <input type="text" class="form-control" id="editTechnician" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editCoordinates" class="form-label">Coordenadas:</label>
+                            <input type="text" class="form-control" id="editCoordinates" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editStatus" class="form-label">Status:</label>
+                            <select class="form-select" id="editStatus" required>
+                                <option value="aberta">Aberta (Verde)</option>
+                                <option value="pendente">Pendente (Amarelo)</option>
+                                <option value="fechada">Fechada (Vermelho)</option>
+                            </select>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="saveEditBtn">Salvar</button>
+                    <button type="button" class="btn btn-danger" id="deleteBtn">Excluir</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-    
-    <!-- Firebase -->
-    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-database-compat.js"></script>
-    
-    <!-- Firebase Config -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
     <script src="firebase-config.js"></script>
-    
-    <!-- Main App Script -->
-    <script>
-        // Variáveis globais
-        let map;
-        const markers = {};
-        const workOrderItems = {};
-        let currentlyEditing = null;
-        
-        // Inicialização do mapa
-        function initMap() {
-            map = L.map('map').setView([38.817256, -9.165423], 14);
-            
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            }).addTo(map);
-            
-            // Verificar se é mobile
-            checkMobileView();
-            
-            // Adicionar evento de clique no mapa para obter coordenadas
-            map.on('click', function(e) {
-                document.getElementById('new-coords').value = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
-            });
-            
-            // Configurar redimensionamento do sidebar
-            setupSidebarResize();
-            
-            // Iniciar listener do Firebase
-            initFirebaseListeners();
-            
-            // Configurar pesquisa
-            setupSearch();
-        }
-        
-        // Configurar redimensionamento do sidebar
-        function setupSidebarResize() {
-            const sidebar = document.getElementById('sidebar');
-            let isResizing = false;
-            let lastDownX = 0;
-            
-            sidebar.addEventListener('mousedown', function(e) {
-                if (e.offsetX > sidebar.offsetWidth - 10) {
-                    isResizing = true;
-                    lastDownX = e.clientX;
-                    document.body.style.cursor = 'col-resize';
-                    sidebar.style.userSelect = 'none';
-                    e.preventDefault();
-                }
-            });
-            
-            document.addEventListener('mousemove', function(e) {
-                if (!isResizing) return;
-                
-                const newWidth = sidebar.offsetWidth + (e.clientX - lastDownX);
-                if (newWidth > 300 && newWidth < 600) {
-                    sidebar.style.width = `${newWidth}px`;
-                    document.documentElement.style.setProperty('--sidebar-width', `${newWidth}px`);
-                }
-                lastDownX = e.clientX;
-            });
-            
-            document.addEventListener('mouseup', function() {
-                isResizing = false;
-                document.body.style.cursor = '';
-                sidebar.style.userSelect = '';
-            });
-        }
-        
-        // Configurar pesquisa
-        function setupSearch() {
-            const searchInput = document.getElementById('search-input');
-            searchInput.addEventListener('input', function() {
-                const searchTerm = this.value.toLowerCase();
-                
-                Object.entries(workOrderItems).forEach(([wo, item]) => {
-                    const woText = wo.toLowerCase();
-                    const pdoText = markers[wo]?.pdo?.toLowerCase() || '';
-                    
-                    if (woText.includes(searchTerm) || pdoText.includes(searchTerm)) {
-                        item.style.display = 'block';
-                    } else {
-                        item.style.display = 'none';
-                    }
-                });
-            });
-        }
-        
-        // Verificar se é visualização mobile
-        function checkMobileView() {
-            if (window.innerWidth <= 768) {
-                document.getElementById('sidebar').classList.add('collapsed');
-                document.getElementById('mobile-toggle').style.display = 'flex';
-            } else {
-                document.getElementById('sidebar').classList.remove('collapsed');
-                document.getElementById('mobile-toggle').style.display = 'none';
-            }
-        }
-        
-        // Alternar sidebar
-        function toggleSidebar() {
-            const sidebar = document.getElementById('sidebar');
-            sidebar.classList.toggle('collapsed');
-            
-            const toggleBtn = document.getElementById('mobile-toggle');
-            if (sidebar.classList.contains('collapsed')) {
-                toggleBtn.innerHTML = '<i class="fas fa-bars"></i>';
-            } else {
-                toggleBtn.innerHTML = '<i class="fas fa-times"></i>';
-            }
-        }
-        
-        // Criar ícone personalizado
-        function createCustomIcon(status) {
-            let color;
-            switch(status) {
-                case 'pendente':
-                    color = '#f39c12'; // Amarelo/laranja
-                    break;
-                case 'fechada':
-                    color = '#e74c3c'; // Vermelho
-                    break;
-                default: // aberta
-                    color = '#3498db'; // Azul
-            }
-            
-            return L.divIcon({
-                className: 'custom-icon',
-                html: `<div style="
-                    width: 30px;
-                    height: 30px;
-                    background: ${color};
-                    border-radius: 50% 50% 50% 0;
-                    transform: rotate(-45deg);
-                    position: relative;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-                ">
-                    <div style="
-                        width: 14px;
-                        height: 14px;
-                        background: rgba(255,255,255,0.8);
-                        border-radius: 50%;
-                        position: absolute;
-                        top: 8px;
-                        left: 8px;
-                    "></div>
-                </div>`,
-                iconSize: [30, 30],
-                iconAnchor: [15, 30]
-            });
-        }
-        
-        // Colar coordenadas formatadas
-        function pasteCoords() {
-            navigator.clipboard.readText().then(text => {
-                // Extrai números e vírgula (permite coordenadas com ou sem espaço após a vírgula)
-                const cleaned = text.replace(/[^\d.,-]/g, '');
-                const coords = cleaned.split(',').map(coord => coord.trim());
-                if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
-                    document.getElementById('new-coords').value = `${parseFloat(coords[0]).toFixed(6)}, ${parseFloat(coords[1]).toFixed(6)}`;
-                } else {
-                    alert('Formato inválido! Cole no formato: latitude, longitude');
-                }
-            }).catch(err => {
-                console.error('Erro ao colar:', err);
-                alert('Não foi possível acessar a área de transferência');
-            });
-        }
-        
-        // Inicializar listeners do Firebase
-        function initFirebaseListeners() {
-            database.ref('workOrders').on('value', (snapshot) => {
-                const data = snapshot.val() || {};
-                
-                // Remover marcadores que não existem mais
-                Object.keys(markers).forEach(wo => {
-                    if (!data[wo]) {
-                        map.removeLayer(markers[wo]);
-                        delete markers[wo];
-                        
-                        if (workOrderItems[wo]) {
-                            workOrderItems[wo].remove();
-                            delete workOrderItems[wo];
-                        }
-                    }
-                });
-                
-                // Adicionar/atualizar marcadores
-                Object.entries(data).forEach(([wo, order]) => {
-                    if (order.coords && order.coords.length === 2) {
-                        // Criar ou atualizar marcador
-                        if (!markers[wo]) {
-                            markers[wo] = L.marker(order.coords, {
-                                icon: createCustomIcon(order.status || 'aberta')
-                            }).addTo(map);
-                            
-                            // Armazenar dados adicionais no marcador
-                            markers[wo].wo = wo;
-                            markers[wo].pdo = order.pdo;
-                            markers[wo].status = order.status;
-                            markers[wo].serviceType = order.serviceType;
-                            markers[wo].technician = order.technician;
-                            
-                            // Criar item na lista
-                            createListItem(wo, order);
-                        } else {
-                            // Atualizar posição se necessário
-                            markers[wo].setLatLng(order.coords);
-                            markers[wo].setIcon(createCustomIcon(order.status || 'aberta'));
-                            
-                            // Atualizar dados adicionais
-                            markers[wo].pdo = order.pdo;
-                            markers[wo].status = order.status;
-                            markers[wo].serviceType = order.serviceType;
-                            markers[wo].technician = order.technician;
-                        }
-                        
-                        // Atualizar popup
-                        updatePopup(wo, order);
-                        
-                        // Atualizar item na lista
-                        if (workOrderItems[wo]) {
-                            updateListItem(wo, order);
-                        }
-                    }
-                });
-            });
-        }
-        
-        // Criar item na lista
-        function createListItem(wo, order) {
-            const item = document.createElement('div');
-            item.className = `work-order-item ${order.status || 'aberta'}`;
-            item.innerHTML = `
-                <button class="action-btn edit-btn" onclick="startEditOrder('${wo}')" title="Editar">
-                    <i class="fas fa-edit"></i>
-                </button>
-                <button class="action-btn delete-btn" onclick="deleteOrder('${wo}')" title="Excluir">
-                    <i class="fas fa-trash"></i>
-                </button>
-                <div class="wo-header">
-                    <span class="wo-number">${wo}</span>
-                    <span class="wo-status">${getStatusText(order.status)}</span>
-                </div>
-                <div class="wo-details">${order.pdo || ''}</div>
-                ${order.serviceType ? `
-                    <div class="wo-service-type service-${order.serviceType}">
-                        ${order.serviceType === 'critical' ? 'Critical' : 'Major'}
-                    </div>
-                ` : ''}
-                ${order.technician ? `<div class="wo-technician"><i class="fas fa-user"></i> ${order.technician}</div>` : ''}
-            `;
-            
-            item.addEventListener('click', () => {
-                map.setView(order.coords, 16);
-                markers[wo].openPopup();
-                
-                if (window.innerWidth <= 768) {
-                    toggleSidebar();
-                }
-            });
-            
-            document.getElementById('work-orders-list').appendChild(item);
-            workOrderItems[wo] = item;
-        }
-        
-        // Obter texto do status
-        function getStatusText(status) {
-            switch(status) {
-                case 'pendente': return 'Pendente';
-                case 'fechada': return 'Fechada';
-                default: return 'Aberta';
-            }
-        }
-        
-        // Atualizar popup
-        function updatePopup(wo, order) {
-            const popupContent = `
-                <div class="popup-title">${wo}</div>
-                <div>${order.pdo || ''}</div>
-                ${order.serviceType ? `
-                    <div class="popup-service-type">
-                        Tipo: <strong>${order.serviceType === 'critical' ? 'Critical' : 'Major'}</strong>
-                    </div>
-                ` : ''}
-                ${order.technician ? `
-                    <div class="popup-technician">
-                        <i class="fas fa-user"></i> Técnico: ${order.technician}
-                    </div>
-                ` : ''}
-                <div class="popup-status status-${order.status || 'aberta'}">
-                    ${getStatusText(order.status)}
-                </div>
-                <a href="https://www.google.com/maps?q=${order.coords[0]},${order.coords[1]}" 
-                   class="gmaps-link" target="_blank">
-                   <i class="fas fa-map-marker-alt"></i> Abrir no Google Maps
-                </a>
-                <div class="popup-actions">
-                    <button onclick="updateOrderStatus('${wo}', 'aberta')" 
-                            class="popup-btn" 
-                            style="${order.status === 'aberta' ? 'background:var(--color-aberta);color:white;' : ''}">
-                        Aberta
-                    </button>
-                    <button onclick="updateOrderStatus('${wo}', 'pendente')" 
-                            class="popup-btn" 
-                            style="${order.status === 'pendente' ? 'background:var(--color-pendente);color:white;' : ''}">
-                        Pendente
-                    </button>
-                    <button onclick="updateOrderStatus('${wo}', 'fechada')" 
-                            class="popup-btn" 
-                            style="${order.status === 'fechada' ? 'background:var(--color-fechada);color:white;' : ''}">
-                        Fechada
-                    </button>
-                    <button onclick="startEditOrder('${wo}')" 
-                            class="popup-btn" 
-                            style="background:var(--color-major);color:white;">
-                        <i class="fas fa-edit"></i> Editar
-                    </button>
-                    <button onclick="deleteOrder('${wo}')" 
-                            class="popup-btn" 
-                            style="background:#95a5a6;color:white;">
-                        <i class="fas fa-trash"></i> Excluir
-                    </button>
-                </div>
-            `;
-            
-            markers[wo].bindPopup(popupContent);
-        }
-        
-        // Atualizar item na lista
-        function updateListItem(wo, order) {
-            const item = workOrderItems[wo];
-            if (item) {
-                // Atualizar status
-                item.className = `work-order-item ${order.status || 'aberta'}`;
-                const statusBadge = item.querySelector('.wo-status');
-                statusBadge.textContent = getStatusText(order.status);
-                
-                switch(order.status) {
-                    case 'pendente':
-                        statusBadge.style.background = 'var(--color-pendente)';
-                        break;
-                    case 'fechada':
-                        statusBadge.style.background = 'var(--color-fechada)';
-                        break;
-                    default:
-                        statusBadge.style.background = 'var(--color-aberta)';
-                }
-                
-                // Atualizar tipo de serviço
-                const serviceTypeEl = item.querySelector('.wo-service-type');
-                if (order.serviceType) {
-                    if (!serviceTypeEl) {
-                        const newServiceTypeEl = document.createElement('div');
-                        newServiceTypeEl.className = `wo-service-type service-${order.serviceType}`;
-                        newServiceTypeEl.textContent = order.serviceType === 'critical' ? 'Critical' : 'Major';
-                        item.querySelector('.wo-details').after(newServiceTypeEl);
-                    } else {
-                        serviceTypeEl.className = `wo-service-type service-${order.serviceType}`;
-                        serviceTypeEl.textContent = order.serviceType === 'critical' ? 'Critical' : 'Major';
-                    }
-                } else if (serviceTypeEl) {
-                    serviceTypeEl.remove();
-                }
-                
-                // Atualizar técnico
-                const technicianEl = item.querySelector('.wo-technician');
-                if (order.technician) {
-                    if (!technicianEl) {
-                        const newTechnicianEl = document.createElement('div');
-                        newTechnicianEl.className = 'wo-technician';
-                        newTechnicianEl.innerHTML = `<i class="fas fa-user"></i> ${order.technician}`;
-                        item.appendChild(newTechnicianEl);
-                    } else {
-                        technicianEl.innerHTML = `<i class="fas fa-user"></i> ${order.technician}`;
-                    }
-                } else if (technicianEl) {
-                    technicianEl.remove();
-                }
-            }
-        }
-        
-        // Iniciar edição de ordem
-        function startEditOrder(wo) {
-            const order = markers[wo];
-            if (!order) return;
-            
-            currentlyEditing = wo;
-            
-            // Preencher formulário
-            document.getElementById('new-wo').value = wo;
-            document.getElementById('new-pdo').value = order.pdo || '';
-            document.getElementById('new-technician').value = order.technician || '';
-            document.getElementById('new-coords').value = `${order.getLatLng().lat.toFixed(6)}, ${order.getLatLng().lng.toFixed(6)}`;
-            document.getElementById('new-status').value = order.status || 'aberta';
-            
-            // Selecionar tipo de serviço
-            document.querySelector(`input[name="serviceType"][value="${order.serviceType || 'major'}"]`).checked = true;
-            
-            // Atualizar UI do formulário
-            document.getElementById('form-title').textContent = 'Editar OS';
-            document.getElementById('submit-btn').innerHTML = '<i class="fas fa-save"></i> Salvar';
-            document.getElementById('cancel-edit-btn').style.display = 'block';
-            document.getElementById('new-wo').readOnly = true;
-            
-            // Rolar para o formulário
-            document.getElementById('order-form-container').scrollIntoView({ behavior: 'smooth' });
-        }
-        
-        // Cancelar edição
-        function cancelEdit() {
-            clearForm();
-            currentlyEditing = null;
-        }
-        
-        // Enviar formulário (adicionar/editar)
-        function submitOrderForm() {
-            const wo = document.getElementById('new-wo').value.trim();
-            const pdo = document.getElementById('new-pdo').value.trim();
-            const serviceType = document.querySelector('input[name="serviceType"]:checked').value;
-            const technician = document.getElementById('new-technician').value.trim();
-            const coordsInput = document.getElementById('new-coords').value.trim();
-            const status = document.getElementById('new-status').value;
-            
-            if (!wo || !pdo || !coordsInput) {
-                alert('Por favor, preencha pelo menos WO, PDO e Coordenadas!');
-                return;
-            }
-            
-            // Processar coordenadas (aceita com ou sem espaço após a vírgula)
-            const coordsArray = coordsInput.split(',').map(coord => parseFloat(coord.trim()));
-            
-            if (coordsArray.length !== 2 || isNaN(coordsArray[0]) || isNaN(coordsArray[1])) {
-                alert('Formato de coordenadas inválido! Use: latitude, longitude');
-                return;
-            }
-            
-            const orderData = {
-                pdo: pdo,
-                serviceType: serviceType,
-                technician: technician || null,
-                coords: coordsArray,
-                status: status,
-                lastUpdated: firebase.database.ServerValue.TIMESTAMP
-            };
-            
-            if (currentlyEditing) {
-                // Editar ordem existente
-                editOrder(currentlyEditing, orderData)
-                    .then(() => {
-                        clearForm();
-                        currentlyEditing = null;
-                    })
-                    .catch(error => {
-                        console.error('Erro ao editar:', error);
-                        alert('Erro ao editar ordem. Verifique o console.');
-                    });
-            } else {
-                // Adicionar nova ordem
-                database.ref('workOrders/' + wo).set(orderData)
-                    .then(() => {
-                        clearForm();
-                    })
-                    .catch(error => {
-                        console.error('Erro ao adicionar:', error);
-                        alert('Erro ao adicionar ordem. Verifique o console.');
-                    });
-            }
-        }
-        
-        // Filtrar marcadores por status
-        function filterMarkers() {
-            const showAbertas = document.getElementById('filter-abertas').checked;
-            const showPendentes = document.getElementById('filter-pendentes').checked;
-            const showFechadas = document.getElementById('filter-fechadas').checked;
-            
-            Object.values(markers).forEach(marker => {
-                const status = marker.status || 'aberta';
-                
-                if ((status === 'aberta' && !showAbertas) || 
-                    (status === 'pendente' && !showPendentes) || 
-                    (status === 'fechada' && !showFechadas)) {
-                    marker.setOpacity(0);
-                    marker.setZIndexOffset(-1000);
-                } else {
-                    marker.setOpacity(1);
-                    marker.setZIndexOffset(0);
-                }
-            });
-        }
-        
-        // Limpar formulário
-        function clearForm() {
-            document.getElementById('new-wo').value = '';
-            document.getElementById('new-pdo').value = '';
-            document.getElementById('new-technician').value = '';
-            document.getElementById('new-coords').value = '';
-            document.getElementById('new-status').value = 'aberta';
-            document.querySelector('input[name="serviceType"][value="major"]').checked = true;
-            
-            // Resetar UI do formulário
-            document.getElementById('form-title').textContent = 'Adicionar Nova OS';
-            document.getElementById('submit-btn').innerHTML = '<i class="fas fa-plus"></i> Adicionar';
-            document.getElementById('cancel-edit-btn').style.display = 'none';
-                        document.getElementById('new-wo').readOnly = false;
-        }
-
-        // Filtrar lista de OS por status
-        function filterListByStatus() {
-            const showAbertas = document.getElementById('filter-abertas').checked;
-            const showPendentes = document.getElementById('filter-pendentes').checked;
-            const showFechadas = document.getElementById('filter-fechadas').checked;
-
-            Object.entries(workOrderItems).forEach(([wo, item]) => {
-                const status = markers[wo]?.status || 'aberta';
-                
-                if ((status === 'aberta' && showAbertas) || 
-                    (status === 'pendente' && showPendentes) || 
-                    (status === 'fechada' && showFechadas)) {
-                    item.style.display = 'block';
-                } else {
-                    item.style.display = 'none';
-                }
-            });
-        }
-
-        // Exportar dados para CSV
-        function exportToCSV() {
-            let csvContent = "WO,PDO,Tipo de Serviço,Técnico,Status,Latitude,Longitude\n";
-            
-            Object.values(markers).forEach(marker => {
-                const coords = marker.getLatLng();
-                csvContent += `"${marker.wo}","${marker.pdo || ''}","${marker.serviceType === 'critical' ? 'Critical' : 'Major'}","${marker.technician || ''}","${getStatusText(marker.status)}",${coords.lat},${coords.lng}\n`;
-            });
-
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.setAttribute('href', url);
-            link.setAttribute('download', 'ordens_de_servico.csv');
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
-
-        // Adicionar botão de exportação
-        function addExportButton() {
-            const exportBtn = document.createElement('button');
-            exportBtn.innerHTML = '<i class="fas fa-file-export"></i> Exportar CSV';
-            exportBtn.style.position = 'absolute';
-            exportBtn.style.bottom = '60px';
-            exportBtn.style.right = '10px';
-            exportBtn.style.zIndex = '1000';
-            exportBtn.style.padding = '8px 12px';
-            exportBtn.style.background = '#2ecc71';
-            exportBtn.style.color = 'white';
-            exportBtn.style.border = 'none';
-            exportBtn.style.borderRadius = '4px';
-            exportBtn.style.cursor = 'pointer';
-            exportBtn.onclick = exportToCSV;
-            
-            document.getElementById('app-container').appendChild(exportBtn);
-        }
-
-        // Inicializar quando o DOM estiver pronto
-        document.addEventListener('DOMContentLoaded', () => {
-            initMap();
-            
-            // Verificar redimensionamento da tela
-            window.addEventListener('resize', checkMobileView);
-            
-            // Configurar filtros para atualizar tanto marcadores quanto lista
-            document.getElementById('filter-abertas').addEventListener('change', function() {
-                filterMarkers();
-                filterListByStatus();
-            });
-            document.getElementById('filter-pendentes').addEventListener('change', function() {
-                filterMarkers();
-                filterListByStatus();
-            });
-            document.getElementById('filter-fechadas').addEventListener('change', function() {
-                filterMarkers();
-                filterListByStatus();
-            });
-            
-            // Adicionar botão de exportação
-            addExportButton();
-        });
-
-        // Funções globais para serem acessíveis pelo HTML
-        window.toggleSidebar = toggleSidebar;
-        window.pasteCoords = pasteCoords;
-        window.submitOrderForm = submitOrderForm;
-        window.clearForm = clearForm;
-        window.cancelEdit = cancelEdit;
-        window.startEditOrder = startEditOrder;
-        window.deleteOrder = deleteOrder;
-        window.updateOrderStatus = updateOrderStatus;
-        window.filterMarkers = filterMarkers;
-    </script>
+    <script src="firebase.js"></script>
 </body>
 </html>
-          
