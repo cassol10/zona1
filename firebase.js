@@ -196,8 +196,8 @@ setTimeout(() => {
   const testMarker = L.marker([38.7223, -9.1393], {
     icon: createMarkerIcon('aberta')
   }).addTo(map)
-    .bindPopup("Marcador de Teste")
+    .bindPopup("Marcador de teste Teste")
     .openPopup();
   
-  console.log("Marcador de teste testestestes adicionado:", testMarker);
+  console.log("Marcador de teste adicionado:", testMarker);
 }, 1000);
