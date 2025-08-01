@@ -1,5 +1,7 @@
-// Configuração do mapa
-const map = L.map('map').setView([38.7223, -9.1393], 12);
+// Inicialização do mapa
+const map = L.map('map').setView([38.7223, -9.1393], 13);
+
+// Camada do mapa
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 }).addTo(map);
@@ -9,22 +11,19 @@ const db = firebase.database();
 const woRef = db.ref('workOrders');
 
 // Ícones personalizados
+const createCustomIcon = (color) => {
+    return L.divIcon({
+        className: 'custom-marker',
+        html: `<div style="background-color:${color};width:24px;height:24px;border-radius:50%;border:2px solid white;display:flex;align-items:center;justify-content:center;color:white;font-weight:bold;">WO</div>`,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
+    });
+};
+
 const icons = {
-    aberta: L.icon({
-        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
-        iconSize: [25, 41],
-        iconAnchor: [12, 41]
-    }),
-    pendente: L.icon({
-        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-yellow.png',
-        iconSize: [25, 41],
-        iconAnchor: [12, 41]
-    }),
-    fechada: L.icon({
-        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-        iconSize: [25, 41],
-        iconAnchor: [12, 41]
-    })
+    aberta: createCustomIcon('#4cc9f0'),
+    pendente: createCustomIcon('#f8961e'),
+    fechada: createCustomIcon('#f94144')
 };
 
 // Armazenamento de marcadores
@@ -38,13 +37,16 @@ document.getElementById('woForm').addEventListener('submit', (e) => {
     const pdo = document.getElementById('pdo').value.trim();
     const coordinatesInput = document.getElementById('coordinates').value.trim();
     
-    // Validação
+    // Validação dos campos obrigatórios
     if (!woNumber || !pdo || !coordinatesInput) {
+        showToast('Preencha todos os campos obrigatórios', 'warning');
         return;
     }
     
+    // Validação das coordenadas
     const coords = coordinatesInput.split(',').map(c => parseFloat(c.trim()));
     if (coords.length !== 2 || isNaN(coords[0]) || isNaN(coords[1])) {
+        showToast('Formato de coordenadas inválido. Use: lat, lng', 'warning');
         return;
     }
     
@@ -59,11 +61,16 @@ document.getElementById('woForm').addEventListener('submit', (e) => {
         createdAt: firebase.database.ServerValue.TIMESTAMP
     };
     
-    woRef.push(newWo);
-    document.getElementById('woForm').reset();
-    
-    // Centralizar mapa na nova WO
-    map.setView([coords[0], coords[1]], 15);
+    woRef.push(newWo)
+        .then(() => {
+            document.getElementById('woForm').reset();
+            // Centralizar no novo marcador
+            map.setView([coords[0], coords[1]], 15);
+        })
+        .catch(error => {
+            console.error('Erro ao salvar WO:', error);
+            showToast('Erro ao salvar WO', 'danger');
+        });
 });
 
 // Carregar WOs
@@ -76,8 +83,13 @@ function loadWorkOrders() {
         const woList = document.getElementById('woList');
         woList.innerHTML = '';
         
-        // Limpar marcadores
+        // Limpar marcadores existentes
         Object.values(markers).forEach(marker => map.removeLayer(marker));
+        
+        if (!snapshot.exists()) {
+            woList.innerHTML = '<div class="text-center py-3 text-muted">Nenhuma WO encontrada</div>';
+            return;
+        }
         
         snapshot.forEach((childSnapshot) => {
             const wo = childSnapshot.val();
@@ -88,33 +100,72 @@ function loadWorkOrders() {
             if (filterPdo && !wo.pdo.toLowerCase().includes(filterPdo)) return;
             if (filterStatus && wo.status !== filterStatus) return;
             
-            // Adicionar marcador
+            // Criar marcador no mapa
             const marker = L.marker([wo.lat, wo.lng], {
                 icon: icons[wo.status] || icons.aberta
             }).addTo(map);
             
+            // Adicionar popup ao marcador
+            marker.bindPopup(`
+                <div class="wo-popup">
+                    <h6>WO: ${wo.woNumber}</h6>
+                    <p><strong>PDO:</strong> ${wo.pdo}</p>
+                    <p><strong>Tipo:</strong> ${wo.type}</p>
+                    <p><strong>Técnico:</strong> ${wo.technician}</p>
+                    <p><strong>Status:</strong> <span class="badge ${getStatusBadgeClass(wo.status)}">${wo.status}</span></p>
+                </div>
+            `);
+            
             markers[woId] = marker;
             
-            // Adicionar à lista
-            const woItem = document.createElement('div');
-            woItem.className = 'wo-item list-group-item';
-            woItem.innerHTML = `
-                <div>
-                    <strong>${wo.woNumber}</strong>
-                    <span class="float-end status-${wo.status}">${wo.status.toUpperCase()}</span>
+            // Adicionar card à lista
+            const woCard = document.createElement('div');
+            woCard.className = `wo-card ${wo.status}`;
+            woCard.innerHTML = `
+                <div class="p-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0">${wo.woNumber}</h6>
+                        <span class="status-badge ${getStatusBadgeClass(wo.status)}">${wo.status.toUpperCase()}</span>
+                    </div>
+                    <div class="text-muted small mb-1"><strong>PDO:</strong> ${wo.pdo}</div>
+                    <div class="text-muted small mb-1"><strong>Técnico:</strong> ${wo.technician}</div>
+                    <div class="text-muted small"><strong>Local:</strong> ${wo.lat.toFixed(6)}, ${wo.lng.toFixed(6)}</div>
                 </div>
-                <div class="small">PDO: ${wo.pdo}</div>
-                <div class="small">Técnico: ${wo.technician}</div>
             `;
             
-            woItem.addEventListener('click', () => {
+            // Evento para centralizar no marcador quando clicar no card
+            woCard.addEventListener('click', () => {
                 map.setView([wo.lat, wo.lng], 15);
                 marker.openPopup();
             });
             
-            woList.appendChild(woItem);
+            woList.appendChild(woCard);
         });
     });
+}
+
+// Funções auxiliares
+function getStatusBadgeClass(status) {
+    return {
+        aberta: 'badge-aberta',
+        pendente: 'badge-pendente',
+        fechada: 'badge-fechada'
+    }[status] || '';
+}
+
+function showToast(message, type = 'success') {
+    // Implementação simples de toast (pode ser substituída por uma biblioteca)
+    const toast = document.createElement('div');
+    toast.className = `toast show position-fixed bottom-0 end-0 m-3 bg-${type} text-white`;
+    toast.style.zIndex = '1100';
+    toast.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">${message}</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" onclick="this.parentElement.parentElement.remove()"></button>
+        </div>
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
 }
 
 // Filtrar WOs
@@ -126,6 +177,11 @@ document.getElementById('filterForm').addEventListener('submit', (e) => {
 // Exportar para CSV
 document.getElementById('exportBtn').addEventListener('click', () => {
     woRef.once('value', (snapshot) => {
+        if (!snapshot.exists()) {
+            showToast('Nenhuma WO para exportar', 'warning');
+            return;
+        }
+        
         let csv = 'Número WO,PDO,Tipo,Técnico,Latitude,Longitude,Status\n';
         
         snapshot.forEach((childSnapshot) => {
@@ -137,18 +193,20 @@ document.getElementById('exportBtn').addEventListener('click', () => {
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.setAttribute('download', 'work_orders.csv');
+        link.setAttribute('download', `work_orders_${new Date().toISOString().slice(0,10)}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        
+        showToast('Exportação concluída', 'success');
     });
 });
 
+// Alternar sidebar em mobile
+window.toggleSidebar = function() {
+    const sidebar = document.getElementById('sidebar');
+    sidebar.classList.toggle('open');
+};
+
 // Inicializar
 loadWorkOrders();
-
-// Função para alternar a sidebar em dispositivos móveis
-function toggleSidebar() {
-    const sidebar = document.querySelector('.sidebar');
-    sidebar.style.display = sidebar.style.display === 'none' ? 'block' : 'none';
-}
