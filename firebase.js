@@ -1,57 +1,81 @@
 // Configuração do Firebase
-if (!firebase.apps.length) {
-    firebase.initializeApp(firebaseConfig);
+try {
+    if (!firebase.apps.length) {
+        firebase.initializeApp(firebaseConfig);
+    }
+    console.log("Firebase inicializado com sucesso");
+} catch (error) {
+    console.error("Erro ao inicializar Firebase:", error);
 }
+
+// Referência do banco de dados
 const database = firebase.database();
 const woRef = database.ref('workOrders');
 
 // Inicialização do Mapa
 const map = L.map('map').setView([38.7223, -9.1393], 13);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors'
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 }).addTo(map);
 
-// Ícones dos Marcadores (SVG embutido)
-function createMarkerIcon(color) {
-    return L.divIcon({
-        html: `
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${color}" stroke="#fff" stroke-width="1.5">
-                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
-            </svg>
-            <div style="position: absolute; bottom: -10px; left: 0; right: 0; text-align: center; font-weight: bold; color: ${color}; font-size: 10px;">WO</div>
-        `,
-        className: 'custom-marker',
-        iconSize: [24, 24],
-        iconAnchor: [12, 24]
-    });
-}
+console.log("Mapa inicializado:", map);
 
+// Cores dos status
 const statusColors = {
     aberta: '#4cc9f0',
     pendente: '#f8961e',
     fechada: '#f94144'
 };
 
-// Armazenamento de Marcadores
+// Criar ícone do marcador
+function createMarkerIcon(status) {
+    const color = statusColors[status] || statusColors.aberta;
+    return L.divIcon({
+        html: `
+            <div style="
+                position: relative;
+                width: 24px;
+                height: 24px;
+                background: ${color};
+                border: 2px solid white;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: white;
+                font-weight: bold;
+                font-size: 10px;
+            ">WO</div>
+        `,
+        className: 'custom-marker',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
+    });
+}
+
+// Objeto para armazenar marcadores
 const markers = {};
 
-// Função Principal para Carregar WOs
+// Função para carregar WOs
 function loadWorkOrders() {
     const statusFilter = document.getElementById('filterStatus').value;
     
     woRef.on('value', (snapshot) => {
-        // Limpar marcadores anteriores
-        Object.values(markers).forEach(marker => {
-            if (marker && map.removeLayer) {
-                map.removeLayer(marker);
+        console.log("Dados recebidos do Firebase:", snapshot.val());
+        
+        // Limpar marcadores existentes
+        Object.keys(markers).forEach(key => {
+            if (markers[key]) {
+                map.removeLayer(markers[key]);
             }
         });
         
         // Limpar lista
-        document.getElementById('woItems').innerHTML = '';
+        const woItems = document.getElementById('woItems');
+        woItems.innerHTML = '';
         
         if (!snapshot.exists()) {
-            document.getElementById('woItems').innerHTML = '<p class="text-muted">Nenhuma WO encontrada</p>';
+            woItems.innerHTML = '<p class="text-muted">Nenhuma WO encontrada</p>';
             return;
         }
         
@@ -62,61 +86,80 @@ function loadWorkOrders() {
             // Aplicar filtro
             if (statusFilter && wo.status !== statusFilter) return;
             
-            // Criar Marcador
-            const marker = L.marker([wo.lat, wo.lng], {
-                icon: createMarkerIcon(statusColors[wo.status] || statusColors.aberta)
-            }).addTo(map);
+            // Verificar se tem coordenadas válidas
+            if (typeof wo.lat !== 'number' || typeof wo.lng !== 'number') {
+                console.warn("WO sem coordenadas válidas:", wo);
+                return;
+            }
             
-            // Adicionar Popup
-            marker.bindPopup(`
-                <div style="min-width: 200px">
-                    <h6 style="color: ${statusColors[wo.status]}">${wo.woNumber}</h6>
-                    <p><b>Status:</b> ${wo.status}</p>
-                    <p><b>PDO:</b> ${wo.pdo}</p>
-                    <p><b>Local:</b> ${wo.lat.toFixed(6)}, ${wo.lng.toFixed(6)}</p>
-                </div>
-            `);
-            
-            // Armazenar referência
-            markers[woId] = marker;
-            
-            // Adicionar à Lista
-            const woItem = document.createElement('div');
-            woItem.className = 'wo-card';
-            woItem.innerHTML = `
-                <div class="d-flex justify-content-between">
-                    <h6>${wo.woNumber}</h6>
-                    <span class="status-badge ${wo.status}" style="background-color: ${statusColors[wo.status]}10">
-                        ${wo.status.toUpperCase()}
-                    </span>
-                </div>
-                <p class="mb-1"><small>PDO: ${wo.pdo}</small></p>
-                <p class="text-muted"><small>${wo.lat.toFixed(6)}, ${wo.lng.toFixed(6)}</small></p>
-            `;
-            
-            // Evento para centralizar no marcador
-            woItem.addEventListener('click', () => {
-                map.setView([wo.lat, wo.lng], 15);
-                marker.openPopup();
-            });
-            
-            document.getElementById('woItems').appendChild(woItem);
+            // Criar marcador
+            try {
+                const marker = L.marker([wo.lat, wo.lng], {
+                    icon: createMarkerIcon(wo.status)
+                }).addTo(map);
+                
+                // Adicionar popup
+                marker.bindPopup(`
+                    <div style="min-width: 200px">
+                        <h6 style="color: ${statusColors[wo.status]}">${wo.woNumber || 'Sem número'}</h6>
+                        <p><b>Status:</b> ${wo.status || 'Não definido'}</p>
+                        <p><b>PDO:</b> ${wo.pdo || 'Não informado'}</p>
+                    </div>
+                `);
+                
+                // Armazenar referência
+                markers[woId] = marker;
+                
+                // Adicionar à lista
+                const woItem = document.createElement('div');
+                woItem.className = 'wo-card';
+                woItem.innerHTML = `
+                    <div class="d-flex justify-content-between">
+                        <h6>${wo.woNumber || 'Sem número'}</h6>
+                        <span class="status-badge" style="background-color: ${statusColors[wo.status]}20; color: ${statusColors[wo.status]}">
+                            ${(wo.status || 'aberta').toUpperCase()}
+                        </span>
+                    </div>
+                    <p class="mb-1"><small>PDO: ${wo.pdo || 'Não informado'}</small></p>
+                    <p class="text-muted"><small>${wo.lat?.toFixed(6) || '0'}, ${wo.lng?.toFixed(6) || '0'}</small></p>
+                `;
+                
+                // Evento para centralizar no marcador
+                woItem.addEventListener('click', () => {
+                    map.setView([wo.lat, wo.lng], 15);
+                    marker.openPopup();
+                });
+                
+                woItems.appendChild(woItem);
+                
+            } catch (error) {
+                console.error("Erro ao criar marcador para WO:", wo, error);
+            }
         });
+    }, (error) => {
+        console.error("Erro ao carregar WOs:", error);
     });
 }
 
-// Adicionar Nova WO
+// Adicionar nova WO
 document.getElementById('woForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const woNumber = document.getElementById('woNumber').value.trim();
     const pdo = document.getElementById('pdo').value.trim();
-    const coordinates = document.getElementById('coordinates').value.trim();
+    const coordsInput = document.getElementById('coordinates').value.trim();
     
-    if (!woNumber || !pdo || !coordinates) return;
+    if (!woNumber || !pdo || !coordsInput) {
+        console.warn("Campos obrigatórios não preenchidos");
+        return;
+    }
     
-    const [lat, lng] = coordinates.split(',').map(c => parseFloat(c.trim()));
-    if (isNaN(lat) || isNaN(lng)) return;
+    const [lat, lng] = coordsInput.split(',').map(c => parseFloat(c.trim()));
+    
+    if (isNaN(lat) || isNaN(lng)) {
+        console.warn("Coordenadas inválidas:", coordsInput);
+        return;
+    }
     
     try {
         await woRef.push({
@@ -130,6 +173,7 @@ document.getElementById('woForm').addEventListener('submit', async (e) => {
         
         document.getElementById('woForm').reset();
         map.setView([lat, lng], 15);
+        console.log("WO adicionada com sucesso");
     } catch (error) {
         console.error("Erro ao salvar WO:", error);
     }
@@ -148,7 +192,7 @@ document.getElementById('exportBtn').addEventListener('click', () => {
         
         snapshot.forEach((childSnapshot) => {
             const wo = childSnapshot.val();
-            csv += `"${wo.woNumber}","${wo.pdo}",${wo.lat},${wo.lng},"${wo.status}"\n`;
+            csv += `"${wo.woNumber || ''}","${wo.pdo || ''}",${wo.lat || 0},${wo.lng || 0},"${wo.status || ''}"\n`;
         });
         
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -163,11 +207,14 @@ document.getElementById('exportBtn').addEventListener('click', () => {
 });
 
 // Inicializar
-loadWorkOrders();
-
-// DEBUG: Verificar se o mapa está funcionando
-setTimeout(() => {
-    L.marker([38.7223, -9.1393]).addTo(map)
-        .bindPopup("Marcador de Teste")
-        .openPopup();
-}, 1000);
+document.addEventListener('DOMContentLoaded', () => {
+    loadWorkOrders();
+    
+    // Adicionar marcador de teste
+    setTimeout(() => {
+        const testMarker = L.marker([38.7223, -9.1393]).addTo(map)
+            .bindPopup("Marcador de Teste")
+            .openPopup();
+        console.log("Marcador de teste adicionado:", testMarker);
+    }, 1000);
+});
