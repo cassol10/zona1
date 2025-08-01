@@ -1,33 +1,30 @@
-// Verifica se o Firebase já foi inicializado
+// Configuração do Firebase
 if (!firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
 }
+const database = firebase.database();
+const woRef = database.ref('workOrders');
 
-// Inicialização do mapa com fallback
-function initMap() {
-    const map = L.map('map').setView([38.7223, -9.1393], 13);
-    
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(map);
+// Inicialização do Mapa
+const map = L.map('map').setView([38.7223, -9.1393], 13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
 
-    return map;
-}
-
-// Variáveis globais
-let map;
-const markers = {};
-let mapInitialized = false;
-
-// Ícones personalizados corrigidos
-const createCustomIcon = (color) => {
-    return new L.Icon({
-        iconUrl: `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' fill='${encodeURIComponent(color)}'><path d='M16 0c-5.523 0-10 4.477-10 10 0 10 10 22 10 22s10-12 10-22c0-5.523-4.477-10-10-10zm0 16c-3.314 0-6-2.686-6-6s2.686-6 6-6 6 2.686 6 6-2.686 6-6 6z'/></svg>`,
-        iconSize: [32, 32],
-        iconAnchor: [16, 32],
-        popupAnchor: [0, -32]
+// Ícones dos Marcadores (SVG embutido)
+function createMarkerIcon(color) {
+    return L.divIcon({
+        html: `
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${color}" stroke="#fff" stroke-width="1.5">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+            </svg>
+            <div style="position: absolute; bottom: -10px; left: 0; right: 0; text-align: center; font-weight: bold; color: ${color}; font-size: 10px;">WO</div>
+        `,
+        className: 'custom-marker',
+        iconSize: [24, 24],
+        iconAnchor: [12, 24]
     });
-};
+}
 
 const statusColors = {
     aberta: '#4cc9f0',
@@ -35,182 +32,108 @@ const statusColors = {
     fechada: '#f94144'
 };
 
-// Inicialização da aplicação
-document.addEventListener('DOMContentLoaded', () => {
-    try {
-        map = initMap();
-        mapInitialized = true;
-        loadWorkOrders();
-        
-        // Verificação do container do mapa
-        if (!document.getElementById('map')) {
-            console.error('Elemento do mapa não encontrado');
-            return;
-        }
+// Armazenamento de Marcadores
+const markers = {};
 
-        // Eventos
-        document.getElementById('woForm').addEventListener('submit', addWorkOrder);
-        document.getElementById('filterForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            loadWorkOrders();
-        });
-        document.getElementById('exportBtn').addEventListener('click', exportToCSV);
-
-    } catch (error) {
-        console.error('Erro na inicialização:', error);
-    }
-});
-
-// Função para adicionar WO corrigida
-async function addWorkOrder(e) {
-    e.preventDefault();
-    
-    if (!mapInitialized) {
-        console.error('Mapa não inicializado');
-        return;
-    }
-
-    const woNumber = document.getElementById('woNumber').value.trim();
-    const pdo = document.getElementById('pdo').value.trim();
-    const coordinatesInput = document.getElementById('coordinates').value.trim();
-
-    if (!woNumber || !pdo || !coordinatesInput) {
-        showToast('Preencha todos os campos obrigatórios', 'warning');
-        return;
-    }
-
-    const coords = coordinatesInput.split(',').map(c => parseFloat(c.trim()));
-    if (coords.length !== 2 || isNaN(coords[0]) || isNaN(coords[1])) {
-        showToast('Coordenadas inválidas. Use: lat, lng', 'warning');
-        return;
-    }
-
-    const newWo = {
-        woNumber,
-        pdo,
-        type: document.querySelector('input[name="type"]:checked').value,
-        technician: document.getElementById('technician').value.trim() || 'Não informado',
-        lat: coords[0],
-        lng: coords[1],
-        status: 'aberta',
-        createdAt: firebase.database.ServerValue.TIMESTAMP
-    };
-
-    try {
-        await woRef.push(newWo);
-        document.getElementById('woForm').reset();
-        map.setView([coords[0], coords[1]], 15);
-        showToast('WO adicionada com sucesso!', 'success');
-    } catch (error) {
-        console.error('Erro ao salvar WO:', error);
-        showToast('Erro ao salvar WO', 'danger');
-    }
-}
-
-// Função para carregar WOs com correções
+// Função Principal para Carregar WOs
 function loadWorkOrders() {
-    if (!mapInitialized) return;
-
-    const filterWoNumber = document.getElementById('filterWoNumber').value.toLowerCase();
-    const filterPdo = document.getElementById('filterPdo').value.toLowerCase();
-    const filterStatus = document.getElementById('filterStatus').value;
-
+    const statusFilter = document.getElementById('filterStatus').value;
+    
     woRef.on('value', (snapshot) => {
-        const woList = document.getElementById('woList');
-        woList.innerHTML = '';
-
-        // Limpar marcadores antigos
+        // Limpar marcadores anteriores
         Object.values(markers).forEach(marker => {
             if (marker && map.removeLayer) {
                 map.removeLayer(marker);
             }
         });
-
+        
+        // Limpar lista
+        document.getElementById('woItems').innerHTML = '';
+        
         if (!snapshot.exists()) {
-            woList.innerHTML = '<div class="text-center py-3 text-muted">Nenhuma WO encontrada</div>';
+            document.getElementById('woItems').innerHTML = '<p class="text-muted">Nenhuma WO encontrada</p>';
             return;
         }
-
+        
         snapshot.forEach((childSnapshot) => {
             const wo = childSnapshot.val();
             const woId = childSnapshot.key;
-
-            // Aplicar filtros
-            if (filterWoNumber && !wo.woNumber.toLowerCase().includes(filterWoNumber)) return;
-            if (filterPdo && !wo.pdo.toLowerCase().includes(filterPdo)) return;
-            if (filterStatus && wo.status !== filterStatus) return;
-
-            // Criar marcador
-            try {
-                const marker = L.marker([wo.lat, wo.lng], {
-                    icon: createCustomIcon(statusColors[wo.status] || statusColors.aberta)
-                }).addTo(map);
-
-                marker.bindPopup(`
-                    <div class="wo-popup">
-                        <h6>${wo.woNumber}</h6>
-                        <p><strong>Status:</strong> <span style="color:${statusColors[wo.status]}">${wo.status}</span></p>
-                        <p><strong>PDO:</strong> ${wo.pdo}</p>
-                        <p><strong>Técnico:</strong> ${wo.technician}</p>
-                    </div>
-                `);
-
-                markers[woId] = marker;
-
-                // Adicionar à lista
-                const woCard = document.createElement('div');
-                woCard.className = `wo-card ${wo.status}`;
-                woCard.innerHTML = `
-                    <div class="p-3">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h6 class="mb-0">${wo.woNumber}</h6>
-                            <span class="status-badge ${getStatusBadgeClass(wo.status)}">
-                                ${wo.status.toUpperCase()}
-                            </span>
-                        </div>
-                        <div class="text-muted small mb-1"><strong>PDO:</strong> ${wo.pdo}</div>
-                        <div class="text-muted small"><strong>Local:</strong> ${wo.lat.toFixed(6)}, ${wo.lng.toFixed(6)}</div>
-                    </div>
-                `;
-
-                woCard.addEventListener('click', () => {
-                    map.setView([wo.lat, wo.lng], 15);
-                    marker.openPopup();
-                });
-
-                woList.appendChild(woCard);
-            } catch (error) {
-                console.error('Erro ao criar marcador:', error);
-            }
+            
+            // Aplicar filtro
+            if (statusFilter && wo.status !== statusFilter) return;
+            
+            // Criar Marcador
+            const marker = L.marker([wo.lat, wo.lng], {
+                icon: createMarkerIcon(statusColors[wo.status] || statusColors.aberta)
+            }).addTo(map);
+            
+            // Adicionar Popup
+            marker.bindPopup(`
+                <div style="min-width: 200px">
+                    <h6 style="color: ${statusColors[wo.status]}">${wo.woNumber}</h6>
+                    <p><b>Status:</b> ${wo.status}</p>
+                    <p><b>PDO:</b> ${wo.pdo}</p>
+                    <p><b>Local:</b> ${wo.lat.toFixed(6)}, ${wo.lng.toFixed(6)}</p>
+                </div>
+            `);
+            
+            // Armazenar referência
+            markers[woId] = marker;
+            
+            // Adicionar à Lista
+            const woItem = document.createElement('div');
+            woItem.className = 'wo-card';
+            woItem.innerHTML = `
+                <div class="d-flex justify-content-between">
+                    <h6>${wo.woNumber}</h6>
+                    <span class="status-badge ${wo.status}" style="background-color: ${statusColors[wo.status]}10">
+                        ${wo.status.toUpperCase()}
+                    </span>
+                </div>
+                <p class="mb-1"><small>PDO: ${wo.pdo}</small></p>
+                <p class="text-muted"><small>${wo.lat.toFixed(6)}, ${wo.lng.toFixed(6)}</small></p>
+            `;
+            
+            // Evento para centralizar no marcador
+            woItem.addEventListener('click', () => {
+                map.setView([wo.lat, wo.lng], 15);
+                marker.openPopup();
+            });
+            
+            document.getElementById('woItems').appendChild(woItem);
         });
     });
 }
 
-// Restante do código permanece igual...
-
-// Funções auxiliares
-function getStatusBadgeClass(status) {
-    return {
-        aberta: 'badge-aberta',
-        pendente: 'badge-pendente',
-        fechada: 'badge-fechada'
-    }[status] || '';
-}
-
-function showToast(message, type = 'success') {
-    // Implementação simples de toast (pode ser substituída por uma biblioteca)
-    const toast = document.createElement('div');
-    toast.className = `toast show position-fixed bottom-0 end-0 m-3 bg-${type} text-white`;
-    toast.style.zIndex = '1100';
-    toast.innerHTML = `
-        <div class="d-flex">
-            <div class="toast-body">${message}</div>
-            <button type="button" class="btn-close btn-close-white me-2 m-auto" onclick="this.parentElement.parentElement.remove()"></button>
-        </div>
-    `;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
-}
+// Adicionar Nova WO
+document.getElementById('woForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const woNumber = document.getElementById('woNumber').value.trim();
+    const pdo = document.getElementById('pdo').value.trim();
+    const coordinates = document.getElementById('coordinates').value.trim();
+    
+    if (!woNumber || !pdo || !coordinates) return;
+    
+    const [lat, lng] = coordinates.split(',').map(c => parseFloat(c.trim()));
+    if (isNaN(lat) || isNaN(lng)) return;
+    
+    try {
+        await woRef.push({
+            woNumber,
+            pdo,
+            lat,
+            lng,
+            status: 'aberta',
+            createdAt: firebase.database.ServerValue.TIMESTAMP
+        });
+        
+        document.getElementById('woForm').reset();
+        map.setView([lat, lng], 15);
+    } catch (error) {
+        console.error("Erro ao salvar WO:", error);
+    }
+});
 
 // Filtrar WOs
 document.getElementById('filterForm').addEventListener('submit', (e) => {
@@ -221,36 +144,30 @@ document.getElementById('filterForm').addEventListener('submit', (e) => {
 // Exportar para CSV
 document.getElementById('exportBtn').addEventListener('click', () => {
     woRef.once('value', (snapshot) => {
-        if (!snapshot.exists()) {
-            showToast('Nenhuma WO para exportar', 'warning');
-            return;
-        }
-        
-        let csv = 'Número WO,PDO,Tipo,Técnico,Latitude,Longitude,Status\n';
+        let csv = 'Número WO,PDO,Latitude,Longitude,Status\n';
         
         snapshot.forEach((childSnapshot) => {
             const wo = childSnapshot.val();
-            csv += `"${wo.woNumber}","${wo.pdo}","${wo.type}","${wo.technician}",${wo.lat},${wo.lng},"${wo.status}"\n`;
+            csv += `"${wo.woNumber}","${wo.pdo}",${wo.lat},${wo.lng},"${wo.status}"\n`;
         });
         
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.setAttribute('download', `work_orders_${new Date().toISOString().slice(0,10)}.csv`);
+        link.setAttribute('download', 'work_orders.csv');
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        
-        showToast('Exportação concluída', 'success');
     });
 });
 
-// Alternar sidebar em mobile
-window.toggleSidebar = function() {
-    const sidebar = document.getElementById('sidebar');
-    sidebar.classList.toggle('open');
-};
-
 // Inicializar
 loadWorkOrders();
+
+// DEBUG: Verificar se o mapa está funcionando
+setTimeout(() => {
+    L.marker([38.7223, -9.1393]).addTo(map)
+        .bindPopup("Marcador de Teste")
+        .openPopup();
+}, 1000);
