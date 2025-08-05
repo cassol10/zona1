@@ -7,8 +7,6 @@
     
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
     
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -47,6 +45,9 @@
             color: white;
             padding: 15px;
             text-align: center;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         
         #controls {
@@ -94,6 +95,7 @@
             border-bottom: 1px solid #dee2e6;
             cursor: pointer;
             transition: background-color 0.2s;
+            position: relative;
         }
         
         .wo-item:hover {
@@ -138,7 +140,6 @@
             border-radius: 12px;
             font-size: 12px;
             margin-top: 5px;
-            background-color: #6c757d;
             color: white;
         }
         
@@ -206,11 +207,28 @@
         .checkbox-group {
             margin: 5px 0;
         }
+        
+        .delete-btn {
+            position: absolute;
+            right: 10px;
+            bottom: 10px;
+            color: #dc3545;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .popup-delete-btn {
+            color: #dc3545;
+            cursor: pointer;
+            margin-top: 10px;
+            display: inline-block;
+        }
     </style>
 </head>
 <body>
     <div id="header">
         <h1>Mapa Interativo de Obras</h1>
+        <div id="status-message"></div>
     </div>
     
     <div id="app-container">
@@ -254,8 +272,6 @@
                 <button class="filter-btn" data-filter="pendente">Pendentes</button>
             </div>
             
-            <div id="status-message"></div>
-            
             <div id="wo-list"></div>
         </div>
         
@@ -264,7 +280,6 @@
 
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
     
     <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/10.5.2/firebase-app-compat.js"></script>
@@ -274,13 +289,13 @@
     <script>
         // Configuração do Firebase (substitua com suas credenciais)
         const firebaseConfig = {
-  apiKey: "AIzaSyAHuqEk_oWEI8CMoozQjBVTZiJXEkH44_8",
-  authDomain: "mapa-z2.firebaseapp.com",
-  databaseURL: "https://mapa-z2-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "mapa-z2",
-  storageBucket: "mapa-z2.firebasestorage.app",
-  messagingSenderId: "28471807080",
-  appId: "1:28471807080:web:2fac85ec9aefe915423fdd"
+          apiKey: "AIzaSyAHuqEk_oWEI8CMoozQjBVTZiJXEkH44_8",
+          authDomain: "mapa-z2.firebaseapp.com",
+          databaseURL: "https://mapa-z2-default-rtdb.europe-west1.firebasedatabase.app",
+          projectId: "mapa-z2",
+          storageBucket: "mapa-z2.firebasestorage.app",
+          messagingSenderId: "28471807080",
+          appId: "1:28471807080:web:2fac85ec9aefe915423fdd"
 };
         
         // Inicializar Firebase
@@ -301,10 +316,6 @@
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             }).addTo(map);
-            
-            // Cluster de marcadores
-            const markersCluster = L.markerClusterGroup();
-            map.addLayer(markersCluster);
             
             // Objetos para armazenamento
             const markers = {};
@@ -369,6 +380,9 @@
                             <label for="popup-pendente-${location.wo}">Pendente</label>
                         </div>
                         ${priorityHTML}
+                        <div class="popup-delete-btn" onclick="deleteWo('${location.wo}')">
+                            <i class="fas fa-trash"></i> Excluir WO
+                        </div>
                         <br>
                         <a href="https://www.google.com/maps?q=${location.lat},${location.lng}" target="_blank" style="color: #3498db;">
                             <i class="fas fa-external-link-alt"></i> Abrir no Google Maps
@@ -412,6 +426,9 @@
                     <div class="wo-pdo">${location.pdo}</div>
                     <div class="wo-desc">${location.descricao}</div>
                     ${priorityHTML}
+                    <div class="delete-btn" onclick="event.stopPropagation(); deleteWo('${location.wo}')">
+                        <i class="fas fa-trash"></i> Excluir
+                    </div>
                 `;
                 
                 item.addEventListener('click', () => {
@@ -450,7 +467,7 @@
                 const marker = L.marker([location.lat, location.lng], {
                     icon: getStatusIcon(location.status),
                     title: `${location.wo} - ${location.pdo}`
-                });
+                }).addTo(map);
                 
                 // Armazenar dados da localização no marcador
                 marker.location = location;
@@ -480,11 +497,24 @@
                 });
                 
                 markers[location.wo] = marker;
-                markersCluster.addLayer(marker);
                 
                 // Atualizar lista
                 updateWoList();
             }
+            
+            // Função para deletar WO
+            window.deleteWo = function(wo) {
+                if (confirm(`Tem certeza que deseja excluir a WO ${wo}?`)) {
+                    db.collection('locations').doc(wo).delete()
+                        .then(() => {
+                            showStatusMessage(`WO ${wo} excluída com sucesso!`);
+                        })
+                        .catch(error => {
+                            console.error("Erro ao excluir WO:", error);
+                            showStatusMessage('Erro ao excluir WO', true);
+                        });
+                }
+            };
             
             // Carregar dados do Firestore
             function loadData() {
@@ -506,7 +536,7 @@
                         
                         if (change.type === 'removed') {
                             if (markers[data.wo]) {
-                                markersCluster.removeLayer(markers[data.wo]);
+                                map.removeLayer(markers[data.wo]);
                                 delete markers[data.wo];
                                 updateWoList();
                             }
