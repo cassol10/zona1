@@ -39,6 +39,7 @@
         
         #map {
             flex: 1;
+            height: 100%;
         }
         
         #header {
@@ -79,6 +80,7 @@
             border: none;
             border-radius: 4px;
             cursor: pointer;
+            margin-top: 10px;
         }
         
         #wo-list {
@@ -119,7 +121,6 @@
         .status-aberta { background-color: #28a745; }
         .status-fechada { background-color: #dc3545; }
         .status-pendente { background-color: #ffc107; color: #212529; }
-        .status-normal { background-color: #17a2b8; }
         
         .wo-pdo {
             font-size: 12px;
@@ -130,6 +131,19 @@
         .wo-desc {
             font-size: 14px;
         }
+        
+        .wo-priority {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            margin-top: 5px;
+            background-color: #6c757d;
+            color: white;
+        }
+        
+        .priority-critica { background-color: #dc3545; }
+        .priority-major { background-color: #fd7e14; }
         
         #list-filters {
             padding: 10px;
@@ -169,6 +183,10 @@
             margin: 5px 0;
         }
         
+        .priority-checkbox {
+            margin: 10px 0 5px 0;
+        }
+        
         .coordinates {
             font-size: 0.9em;
             color: #6c757d;
@@ -177,6 +195,16 @@
         
         .leaflet-popup-content {
             width: auto !important;
+        }
+        
+        .priority-options {
+            margin-top: 10px;
+            border-top: 1px solid #eee;
+            padding-top: 10px;
+        }
+        
+        .checkbox-group {
+            margin: 5px 0;
         }
     </style>
 </head>
@@ -206,13 +234,15 @@
                     <input type="text" id="new-coords" placeholder="Ex: 38.757450, -9.147659">
                 </div>
                 <div class="form-group">
-                    <label for="new-status">Status:</label>
-                    <select id="new-status">
-                        <option value="aberta">Aberta</option>
-                        <option value="fechada">Fechada</option>
-                        <option value="pendente">Pendente</option>
-                        <option value="normal" selected>Normal</option>
-                    </select>
+                    <label>Prioridade:</label>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="new-priority-critica" name="priority" value="critica">
+                        <label for="new-priority-critica">Crítica</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="new-priority-major" name="priority" value="major">
+                        <label for="new-priority-major">Major</label>
+                    </div>
                 </div>
                 <button id="add-wo-btn">Adicionar WO</button>
             </div>
@@ -243,7 +273,7 @@
     
     <script>
         // Configuração do Firebase (substitua com suas credenciais)
-     const firebaseConfig = {
+        const firebaseConfig = {
   apiKey: "AIzaSyAHuqEk_oWEI8CMoozQjBVTZiJXEkH44_8",
   authDomain: "mapa-z2.firebaseapp.com",
   databaseURL: "https://mapa-z2-default-rtdb.europe-west1.firebasedatabase.app",
@@ -303,6 +333,18 @@
             
             // Função para criar conteúdo do popup
             function createPopupContent(location) {
+                const priorityHTML = location.priority 
+                    ? `<div class="priority-options">
+                          <strong>Prioridade:</strong><br>
+                          <input type="checkbox" id="popup-priority-critica-${location.wo}" 
+                              ${location.priority === 'critica' ? 'checked' : ''} disabled>
+                          <label for="popup-priority-critica-${location.wo}">Crítica</label><br>
+                          <input type="checkbox" id="popup-priority-major-${location.wo}" 
+                              ${location.priority === 'major' ? 'checked' : ''} disabled>
+                          <label for="popup-priority-major-${location.wo}">Major</label>
+                       </div>`
+                    : '';
+                
                 return `
                     <div class="info-window">
                         <strong>WO:</strong> ${location.wo}<br>
@@ -326,6 +368,7 @@
                                 ${location.status === 'pendente' ? 'checked' : ''}>
                             <label for="popup-pendente-${location.wo}">Pendente</label>
                         </div>
+                        ${priorityHTML}
                         <br>
                         <a href="https://www.google.com/maps?q=${location.lat},${location.lng}" target="_blank" style="color: #3498db;">
                             <i class="fas fa-external-link-alt"></i> Abrir no Google Maps
@@ -355,6 +398,12 @@
                 const statusClass = `status-${location.status}`;
                 const statusText = location.status.charAt(0).toUpperCase() + location.status.slice(1);
                 
+                const priorityHTML = location.priority 
+                    ? `<div class="wo-priority priority-${location.priority}">
+                          ${location.priority === 'critica' ? 'Crítica' : 'Major'}
+                       </div>` 
+                    : '';
+                
                 item.innerHTML = `
                     <div class="wo-header">
                         <span>${location.wo}</span>
@@ -362,6 +411,7 @@
                     </div>
                     <div class="wo-pdo">${location.pdo}</div>
                     <div class="wo-desc">${location.descricao}</div>
+                    ${priorityHTML}
                 `;
                 
                 item.addEventListener('click', () => {
@@ -477,7 +527,7 @@
                         descricao: 'Normal',
                         lat: 38.817256,
                         lng: -9.165423,
-                        status: 'normal'
+                        status: 'aberta'
                     },
                     {
                         wo: 'WO 16910762',
@@ -485,7 +535,7 @@
                         descricao: 'Normal',
                         lat: 38.837121,
                         lng: -9.156680,
-                        status: 'normal'
+                        status: 'aberta'
                     },
                     {
                         wo: 'WO 16922859',
@@ -493,7 +543,7 @@
                         descricao: 'Normal',
                         lat: 38.822771,
                         lng: -9.144502,
-                        status: 'normal'
+                        status: 'aberta'
                     }
                 ];
                 
@@ -522,7 +572,6 @@
                 const pdo = document.getElementById('new-pdo').value.trim();
                 const desc = document.getElementById('new-desc').value.trim();
                 const coords = document.getElementById('new-coords').value.trim();
-                const status = document.getElementById('new-status').value;
                 
                 // Validar campos
                 if (!wo || !pdo || !desc || !coords) {
@@ -546,7 +595,7 @@
                 const lat = parseFloat(coordsArray[0]);
                 const lng = parseFloat(coordsArray[1]);
                 
-                if (isNaN(lat) || isNaN(lng) {
+                if (isNaN(lat) || isNaN(lng)) {
                     showStatusMessage('Coordenadas devem ser números válidos', true);
                     return;
                 }
@@ -562,6 +611,14 @@
                     return;
                 }
                 
+                // Obter prioridade
+                let priority = null;
+                if (document.getElementById('new-priority-critica').checked) {
+                    priority = 'critica';
+                } else if (document.getElementById('new-priority-major').checked) {
+                    priority = 'major';
+                }
+                
                 // Criar novo objeto de localização
                 const newLocation = {
                     wo: wo.toUpperCase(),
@@ -569,7 +626,8 @@
                     descricao: desc,
                     lat: lat,
                     lng: lng,
-                    status: status
+                    status: 'aberta', // Sempre começa como "aberta"
+                    priority: priority
                 };
                 
                 // Adicionar ao Firestore
@@ -582,7 +640,8 @@
                         document.getElementById('new-pdo').value = '';
                         document.getElementById('new-desc').value = '';
                         document.getElementById('new-coords').value = '';
-                        document.getElementById('new-status').value = 'normal';
+                        document.getElementById('new-priority-critica').checked = false;
+                        document.getElementById('new-priority-major').checked = false;
                     })
                     .catch(error => {
                         console.error("Erro ao adicionar WO:", error);
