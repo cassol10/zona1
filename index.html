@@ -288,7 +288,7 @@
     
     <script>
         // Configuração do Firebase (substitua com suas credenciais)
-        const firebaseConfig = {
+       const firebaseConfig = {
           apiKey: "AIzaSyAHuqEk_oWEI8CMoozQjBVTZiJXEkH44_8",
           authDomain: "mapa-z2.firebaseapp.com",
           databaseURL: "https://mapa-z2-default-rtdb.europe-west1.firebasedatabase.app",
@@ -299,370 +299,386 @@
 };
         
         // Inicializar Firebase
-        firebase.initializeApp(firebaseConfig);
+        const app = firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
         const auth = firebase.auth();
         
-        // Autenticação anônima
-        auth.signInAnonymously().catch(error => {
-            console.error("Erro de autenticação:", error);
-        });
+        // Variáveis globais
+        let map;
+        const markers = {};
+        let currentFilter = 'all';
+        let selectedWo = null;
         
-        document.addEventListener('DOMContentLoaded', function() {
-            // Inicializar o mapa
-            const map = L.map('map').setView([38.822771, -9.144502], 13);
+        // Função para mostrar mensagem de status
+        function showStatusMessage(message, isError = false) {
+            const statusElement = document.getElementById('status-message');
+            statusElement.textContent = message;
+            statusElement.style.color = isError ? '#dc3545' : '#28a745';
             
-            // Adicionar camada do OpenStreetMap
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            setTimeout(() => {
+                statusElement.textContent = '';
+            }, 3000);
+        }
+        
+        // Função para obter ícone com base no status
+        function getStatusIcon(status) {
+            let color;
+            switch(status) {
+                case 'fechada': color = 'red'; break;
+                case 'aberta': color = 'green'; break;
+                case 'pendente': color = 'orange'; break;
+                default: color = 'blue';
+            }
+            
+            return L.icon({
+                iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
+                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                shadowSize: [41, 41]
+            });
+        }
+        
+        // Função para criar conteúdo do popup
+        function createPopupContent(location) {
+            const priorityHTML = location.priority 
+                ? `<div class="priority-options">
+                      <strong>Prioridade:</strong><br>
+                      <input type="checkbox" id="popup-priority-critica-${location.wo}" 
+                          ${location.priority === 'critica' ? 'checked' : ''} disabled>
+                      <label for="popup-priority-critica-${location.wo}">Crítica</label><br>
+                      <input type="checkbox" id="popup-priority-major-${location.wo}" 
+                          ${location.priority === 'major' ? 'checked' : ''} disabled>
+                      <label for="popup-priority-major-${location.wo}">Major</label>
+                   </div>`
+                : '';
+            
+            return `
+                <div class="info-window">
+                    <strong>WO:</strong> ${location.wo}<br>
+                    <strong>PDO:</strong> ${location.pdo}<br>
+                    <strong>Descrição:</strong> ${location.descricao}<br>
+                    <div class="coordinates">
+                        Coord: ${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}
+                    </div>
+                    <br>
+                    <strong>Status:</strong><br>
+                    <div class="status-checkbox">
+                        <input type="radio" id="popup-aberta-${location.wo}" name="popup-status-${location.wo}" value="aberta" 
+                            ${location.status === 'aberta' ? 'checked' : ''}>
+                        <label for="popup-aberta-${location.wo}">Aberta</label><br>
+                        
+                        <input type="radio" id="popup-fechada-${location.wo}" name="popup-status-${location.wo}" value="fechada" 
+                            ${location.status === 'fechada' ? 'checked' : ''}>
+                        <label for="popup-fechada-${location.wo}">Fechada</label><br>
+                        
+                        <input type="radio" id="popup-pendente-${location.wo}" name="popup-status-${location.wo}" value="pendente" 
+                            ${location.status === 'pendente' ? 'checked' : ''}>
+                        <label for="popup-pendente-${location.wo}">Pendente</label>
+                    </div>
+                    ${priorityHTML}
+                    <div class="popup-delete-btn" onclick="deleteWo('${location.wo}')">
+                        <i class="fas fa-trash"></i> Excluir WO
+                    </div>
+                    <br>
+                    <a href="https://www.google.com/maps?q=${location.lat},${location.lng}" target="_blank" style="color: #3498db;">
+                        <i class="fas fa-external-link-alt"></i> Abrir no Google Maps
+                    </a>
+                </div>
+            `;
+        }
+        
+        // Função para criar item da lista
+        function createWoListItem(location) {
+            const item = document.createElement('div');
+            item.className = 'wo-item';
+            item.dataset.wo = location.wo;
+            item.dataset.status = location.status;
+            
+            const statusClass = `status-${location.status}`;
+            const statusText = location.status.charAt(0).toUpperCase() + location.status.slice(1);
+            
+            const priorityHTML = location.priority 
+                ? `<div class="wo-priority priority-${location.priority}">
+                      ${location.priority === 'critica' ? 'Crítica' : 'Major'}
+                   </div>` 
+                : '';
+            
+            item.innerHTML = `
+                <div class="wo-header">
+                    <span>${location.wo}</span>
+                    <span class="wo-status ${statusClass}">${statusText}</span>
+                </div>
+                <div class="wo-pdo">${location.pdo}</div>
+                <div class="wo-desc">${location.descricao}</div>
+                ${priorityHTML}
+                <div class="delete-btn" onclick="event.stopPropagation(); deleteWo('${location.wo}')">
+                    <i class="fas fa-trash"></i> Excluir
+                </div>
+            `;
+            
+            item.addEventListener('click', () => {
+                // Selecionar item
+                document.querySelectorAll('.wo-item').forEach(el => el.classList.remove('selected'));
+                item.classList.add('selected');
+                selectedWo = location.wo;
+                
+                // Centralizar no mapa e abrir popup
+                const marker = markers[location.wo];
+                if (marker) {
+                    map.setView(marker.getLatLng(), 15);
+                    marker.openPopup();
+                }
+            });
+            
+            return item;
+        }
+        
+        // Função para atualizar a lista
+        function updateWoList() {
+            const woList = document.getElementById('wo-list');
+            woList.innerHTML = '';
+            
+            Object.values(markers)
+                .filter(marker => currentFilter === 'all' || marker.location.status === currentFilter)
+                .sort((a, b) => a.location.wo.localeCompare(b.location.wo))
+                .forEach(marker => {
+                    const listItem = createWoListItem(marker.location);
+                    woList.appendChild(listItem);
+                });
+        }
+        
+        // Função para adicionar marcador ao mapa
+        function addMarker(location) {
+            const marker = L.marker([location.lat, location.lng], {
+                icon: getStatusIcon(location.status),
+                title: `${location.wo} - ${location.pdo}`
             }).addTo(map);
             
-            // Objetos para armazenamento
-            const markers = {};
-            let currentFilter = 'all';
-            let selectedWo = null;
+            // Armazenar dados da localização no marcador
+            marker.location = location;
             
-            // Função para obter ícone com base no status
-            function getStatusIcon(status) {
-                let color;
-                switch(status) {
-                    case 'fechada': color = 'red'; break;
-                    case 'aberta': color = 'green'; break;
-                    case 'pendente': color = 'orange'; break;
-                    default: color = 'blue';
-                }
-                
-                return L.icon({
-                    iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
-                    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-                    iconSize: [25, 41],
-                    iconAnchor: [12, 41],
-                    popupAnchor: [1, -34],
-                    shadowSize: [41, 41]
-                });
-            }
-            
-            // Função para criar conteúdo do popup
-            function createPopupContent(location) {
-                const priorityHTML = location.priority 
-                    ? `<div class="priority-options">
-                          <strong>Prioridade:</strong><br>
-                          <input type="checkbox" id="popup-priority-critica-${location.wo}" 
-                              ${location.priority === 'critica' ? 'checked' : ''} disabled>
-                          <label for="popup-priority-critica-${location.wo}">Crítica</label><br>
-                          <input type="checkbox" id="popup-priority-major-${location.wo}" 
-                              ${location.priority === 'major' ? 'checked' : ''} disabled>
-                          <label for="popup-priority-major-${location.wo}">Major</label>
-                       </div>`
-                    : '';
-                
-                return `
-                    <div class="info-window">
-                        <strong>WO:</strong> ${location.wo}<br>
-                        <strong>PDO:</strong> ${location.pdo}<br>
-                        <strong>Descrição:</strong> ${location.descricao}<br>
-                        <div class="coordinates">
-                            Coord: ${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}
-                        </div>
-                        <br>
-                        <strong>Status:</strong><br>
-                        <div class="status-checkbox">
-                            <input type="radio" id="popup-aberta-${location.wo}" name="popup-status-${location.wo}" value="aberta" 
-                                ${location.status === 'aberta' ? 'checked' : ''}>
-                            <label for="popup-aberta-${location.wo}">Aberta</label><br>
-                            
-                            <input type="radio" id="popup-fechada-${location.wo}" name="popup-status-${location.wo}" value="fechada" 
-                                ${location.status === 'fechada' ? 'checked' : ''}>
-                            <label for="popup-fechada-${location.wo}">Fechada</label><br>
-                            
-                            <input type="radio" id="popup-pendente-${location.wo}" name="popup-status-${location.wo}" value="pendente" 
-                                ${location.status === 'pendente' ? 'checked' : ''}>
-                            <label for="popup-pendente-${location.wo}">Pendente</label>
-                        </div>
-                        ${priorityHTML}
-                        <div class="popup-delete-btn" onclick="deleteWo('${location.wo}')">
-                            <i class="fas fa-trash"></i> Excluir WO
-                        </div>
-                        <br>
-                        <a href="https://www.google.com/maps?q=${location.lat},${location.lng}" target="_blank" style="color: #3498db;">
-                            <i class="fas fa-external-link-alt"></i> Abrir no Google Maps
-                        </a>
-                    </div>
-                `;
-            }
-            
-            // Função para mostrar mensagem de status
-            function showStatusMessage(message, isError = false) {
-                const statusElement = document.getElementById('status-message');
-                statusElement.textContent = message;
-                statusElement.style.color = isError ? '#dc3545' : '#28a745';
-                
-                setTimeout(() => {
-                    statusElement.textContent = '';
-                }, 3000);
-            }
-            
-            // Função para criar item da lista
-            function createWoListItem(location) {
-                const item = document.createElement('div');
-                item.className = 'wo-item';
-                item.dataset.wo = location.wo;
-                item.dataset.status = location.status;
-                
-                const statusClass = `status-${location.status}`;
-                const statusText = location.status.charAt(0).toUpperCase() + location.status.slice(1);
-                
-                const priorityHTML = location.priority 
-                    ? `<div class="wo-priority priority-${location.priority}">
-                          ${location.priority === 'critica' ? 'Crítica' : 'Major'}
-                       </div>` 
-                    : '';
-                
-                item.innerHTML = `
-                    <div class="wo-header">
-                        <span>${location.wo}</span>
-                        <span class="wo-status ${statusClass}">${statusText}</span>
-                    </div>
-                    <div class="wo-pdo">${location.pdo}</div>
-                    <div class="wo-desc">${location.descricao}</div>
-                    ${priorityHTML}
-                    <div class="delete-btn" onclick="event.stopPropagation(); deleteWo('${location.wo}')">
-                        <i class="fas fa-trash"></i> Excluir
-                    </div>
-                `;
-                
-                item.addEventListener('click', () => {
-                    // Selecionar item
-                    document.querySelectorAll('.wo-item').forEach(el => el.classList.remove('selected'));
-                    item.classList.add('selected');
-                    selectedWo = location.wo;
-                    
-                    // Centralizar no mapa e abrir popup
-                    const marker = markers[location.wo];
-                    if (marker) {
-                        map.setView(marker.getLatLng(), 15);
-                        marker.openPopup();
-                    }
-                });
-                
-                return item;
-            }
-            
-            // Função para atualizar a lista
-            function updateWoList() {
-                const woList = document.getElementById('wo-list');
-                woList.innerHTML = '';
-                
-                Object.values(markers)
-                    .filter(marker => currentFilter === 'all' || marker.location.status === currentFilter)
-                    .sort((a, b) => a.location.wo.localeCompare(b.location.wo))
-                    .forEach(marker => {
-                        const listItem = createWoListItem(marker.location);
-                        woList.appendChild(listItem);
-                    });
-            }
-            
-            // Função para adicionar marcador ao mapa
-            function addMarker(location) {
-                const marker = L.marker([location.lat, location.lng], {
-                    icon: getStatusIcon(location.status),
-                    title: `${location.wo} - ${location.pdo}`
-                }).addTo(map);
-                
-                // Armazenar dados da localização no marcador
-                marker.location = location;
-                
-                marker.bindPopup(createPopupContent(location));
-                
-                marker.on('popupopen', function() {
-                    // Adicionar listeners para os radio buttons
-                    document.querySelectorAll(`input[name="popup-status-${location.wo}"]`).forEach(radio => {
-                        radio.addEventListener('change', (e) => {
-                            const newStatus = e.target.value;
-                            marker.setIcon(getStatusIcon(newStatus));
-                            location.status = newStatus;
-                            
-                            // Atualizar no Firestore
-                            db.collection('locations').doc(location.wo).update({
-                                status: newStatus
-                            }).then(() => {
-                                showStatusMessage('Status atualizado com sucesso!');
-                                updateWoList();
-                            }).catch(error => {
-                                console.error("Erro ao atualizar status:", error);
-                                showStatusMessage('Erro ao atualizar status', true);
-                            });
-                        });
-                    });
-                });
-                
-                markers[location.wo] = marker;
-                
-                // Atualizar lista
-                updateWoList();
-            }
-            
-            // Função para deletar WO
-            window.deleteWo = function(wo) {
-                if (confirm(`Tem certeza que deseja excluir a WO ${wo}?`)) {
-                    db.collection('locations').doc(wo).delete()
-                        .then(() => {
-                            showStatusMessage(`WO ${wo} excluída com sucesso!`);
-                        })
-                        .catch(error => {
-                            console.error("Erro ao excluir WO:", error);
-                            showStatusMessage('Erro ao excluir WO', true);
-                        });
-                }
+            // Criar popup com conteúdo dinâmico
+            const updatePopupContent = () => {
+                marker.setPopupContent(createPopupContent(location));
             };
             
-            // Carregar dados do Firestore
-            function loadData() {
-                db.collection('locations').onSnapshot((snapshot) => {
-                    snapshot.docChanges().forEach((change) => {
-                        const data = change.doc.data();
+            marker.bindPopup(createPopupContent(location));
+            
+            marker.on('popupopen', function() {
+                // Atualizar conteúdo do popup
+                updatePopupContent();
+                
+                // Adicionar listeners para os radio buttons
+                document.querySelectorAll(`input[name="popup-status-${location.wo}"]`).forEach(radio => {
+                    radio.addEventListener('change', async (e) => {
+                        const newStatus = e.target.value;
+                        marker.setIcon(getStatusIcon(newStatus));
+                        location.status = newStatus;
                         
-                        if (change.type === 'added' || change.type === 'modified') {
-                            if (markers[data.wo]) {
-                                // Atualizar marcador existente
-                                markers[data.wo].setIcon(getStatusIcon(data.status));
-                                markers[data.wo].setPopupContent(createPopupContent(data));
-                                markers[data.wo].location = data;
-                            } else {
-                                // Adicionar novo marcador
-                                addMarker(data);
-                            }
-                        }
-                        
-                        if (change.type === 'removed') {
-                            if (markers[data.wo]) {
-                                map.removeLayer(markers[data.wo]);
-                                delete markers[data.wo];
-                                updateWoList();
-                            }
+                        try {
+                            // Atualizar no Firestore
+                            await db.collection('locations').doc(location.wo).update({
+                                status: newStatus
+                            });
+                            showStatusMessage('Status atualizado com sucesso!');
+                            updatePopupContent();
+                            updateWoList();
+                        } catch (error) {
+                            console.error("Erro ao atualizar status:", error);
+                            showStatusMessage('Erro ao atualizar status', true);
                         }
                     });
-                }, (error) => {
-                    console.error("Erro ao carregar dados:", error);
-                    showStatusMessage('Erro ao carregar dados', true);
-                });
-            }
-            
-            // Inicializar dados padrão se a coleção estiver vazia
-            function initializeData() {
-                const defaultLocations = [
-                    {
-                        wo: 'WO 16903160',
-                        pdo: 'PDO-92-LOU-0161.33',
-                        descricao: 'Normal',
-                        lat: 38.817256,
-                        lng: -9.165423,
-                        status: 'aberta'
-                    },
-                    {
-                        wo: 'WO 16910762',
-                        pdo: 'PDO-92-LOU-0010.13',
-                        descricao: 'Normal',
-                        lat: 38.837121,
-                        lng: -9.156680,
-                        status: 'aberta'
-                    },
-                    {
-                        wo: 'WO 16922859',
-                        pdo: 'PDO-92-LOU-1259.2',
-                        descricao: 'Normal',
-                        lat: 38.822771,
-                        lng: -9.144502,
-                        status: 'aberta'
-                    }
-                ];
-                
-                db.collection('locations').get().then((snapshot) => {
-                    if (snapshot.empty) {
-                        defaultLocations.forEach(location => {
-                            db.collection('locations').doc(location.wo).set(location);
-                        });
-                    }
-                });
-            }
-            
-            // Filtros da lista
-            document.querySelectorAll('.filter-btn').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-                    this.classList.add('active');
-                    currentFilter = this.dataset.filter;
-                    updateWoList();
                 });
             });
             
-            // Adicionar nova WO
-            document.getElementById('add-wo-btn').addEventListener('click', function() {
-                const wo = document.getElementById('new-wo').value.trim();
-                const pdo = document.getElementById('new-pdo').value.trim();
-                const desc = document.getElementById('new-desc').value.trim();
-                const coords = document.getElementById('new-coords').value.trim();
-                
-                // Validar campos
-                if (!wo || !pdo || !desc || !coords) {
-                    showStatusMessage('Preencha todos os campos', true);
-                    return;
+            markers[location.wo] = marker;
+            updateWoList();
+        }
+        
+        // Função para deletar WO
+        window.deleteWo = async function(wo) {
+            if (confirm(`Tem certeza que deseja excluir a WO ${wo}?`)) {
+                try {
+                    await db.collection('locations').doc(wo).delete();
+                    showStatusMessage(`WO ${wo} excluída com sucesso!`);
+                    
+                    // Remover marcador do mapa se existir
+                    if (markers[wo]) {
+                        map.removeLayer(markers[wo]);
+                        delete markers[wo];
+                        updateWoList();
+                    }
+                } catch (error) {
+                    console.error("Erro ao excluir WO:", error);
+                    showStatusMessage('Erro ao excluir WO', true);
                 }
-                
-                // Validar formato WO
-                if (!wo.match(/^WO\s\d{8}$/i)) {
-                    showStatusMessage('Formato WO inválido (ex: WO 12345678)', true);
-                    return;
+            }
+        };
+        
+        // Função para carregar dados do Firestore
+        function loadData() {
+            db.collection('locations').onSnapshot((snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    const data = change.doc.data();
+                    
+                    if (change.type === 'added' || change.type === 'modified') {
+                        if (markers[data.wo]) {
+                            // Atualizar marcador existente
+                            markers[data.wo].setIcon(getStatusIcon(data.status));
+                            markers[data.wo].location = data;
+                            markers[data.wo].setPopupContent(createPopupContent(data));
+                        } else {
+                            // Adicionar novo marcador
+                            addMarker(data);
+                        }
+                    }
+                    
+                    if (change.type === 'removed') {
+                        if (markers[data.wo]) {
+                            map.removeLayer(markers[data.wo]);
+                            delete markers[data.wo];
+                            updateWoList();
+                        }
+                    }
+                });
+            }, (error) => {
+                console.error("Erro ao carregar dados:", error);
+                showStatusMessage('Erro ao carregar dados', true);
+            });
+        }
+        
+        // Função para inicializar dados padrão
+        async function initializeData() {
+            const defaultLocations = [
+                {
+                    wo: 'WO 16903160',
+                    pdo: 'PDO-92-LOU-0161.33',
+                    descricao: 'Normal',
+                    lat: 38.817256,
+                    lng: -9.165423,
+                    status: 'aberta'
+                },
+                {
+                    wo: 'WO 16910762',
+                    pdo: 'PDO-92-LOU-0010.13',
+                    descricao: 'Normal',
+                    lat: 38.837121,
+                    lng: -9.156680,
+                    status: 'aberta'
+                },
+                {
+                    wo: 'WO 16922859',
+                    pdo: 'PDO-92-LOU-1259.2',
+                    descricao: 'Normal',
+                    lat: 38.822771,
+                    lng: -9.144502,
+                    status: 'aberta'
                 }
+            ];
+            
+            const snapshot = await db.collection('locations').get();
+            if (snapshot.empty) {
+                const batch = db.batch();
+                defaultLocations.forEach(location => {
+                    const docRef = db.collection('locations').doc(location.wo);
+                    batch.set(docRef, location);
+                });
+                await batch.commit();
+            }
+        }
+        
+        // Inicializar aplicação
+        document.addEventListener('DOMContentLoaded', async function() {
+            try {
+                // Autenticar anonimamente
+                await auth.signInAnonymously();
                 
-                // Validar coordenadas
-                const coordsArray = coords.split(',').map(c => c.trim());
-                if (coordsArray.length !== 2) {
-                    showStatusMessage('Formato de coordenadas inválido (use: lat, lng)', true);
-                    return;
-                }
+                // Inicializar mapa
+                map = L.map('map').setView([38.822771, -9.144502], 13);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }).addTo(map);
                 
-                const lat = parseFloat(coordsArray[0]);
-                const lng = parseFloat(coordsArray[1]);
+                // Configurar filtros
+                document.querySelectorAll('.filter-btn').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                        this.classList.add('active');
+                        currentFilter = this.dataset.filter;
+                        updateWoList();
+                    });
+                });
                 
-                if (isNaN(lat) || isNaN(lng)) {
-                    showStatusMessage('Coordenadas devem ser números válidos', true);
-                    return;
-                }
-                
-                if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-                    showStatusMessage('Coordenadas fora do intervalo válido', true);
-                    return;
-                }
-                
-                // Verificar se WO já existe
-                if (markers[wo]) {
-                    showStatusMessage('WO já existe no sistema', true);
-                    return;
-                }
-                
-                // Obter prioridade
-                let priority = null;
-                if (document.getElementById('new-priority-critica').checked) {
-                    priority = 'critica';
-                } else if (document.getElementById('new-priority-major').checked) {
-                    priority = 'major';
-                }
-                
-                // Criar novo objeto de localização
-                const newLocation = {
-                    wo: wo.toUpperCase(),
-                    pdo: pdo,
-                    descricao: desc,
-                    lat: lat,
-                    lng: lng,
-                    status: 'aberta', // Sempre começa como "aberta"
-                    priority: priority
-                };
-                
-                // Adicionar ao Firestore
-                db.collection('locations').doc(wo).set(newLocation)
-                    .then(() => {
+                // Configurar botão de adicionar WO
+                document.getElementById('add-wo-btn').addEventListener('click', async function() {
+                    const wo = document.getElementById('new-wo').value.trim();
+                    const pdo = document.getElementById('new-pdo').value.trim();
+                    const desc = document.getElementById('new-desc').value.trim();
+                    const coords = document.getElementById('new-coords').value.trim();
+                    
+                    // Validar campos
+                    if (!wo || !pdo || !desc || !coords) {
+                        showStatusMessage('Preencha todos os campos', true);
+                        return;
+                    }
+                    
+                    // Validar formato WO
+                    if (!wo.match(/^WO\s\d{8}$/i)) {
+                        showStatusMessage('Formato WO inválido (ex: WO 12345678)', true);
+                        return;
+                    }
+                    
+                    // Validar coordenadas
+                    const coordsArray = coords.split(',').map(c => c.trim());
+                    if (coordsArray.length !== 2) {
+                        showStatusMessage('Formato de coordenadas inválido (use: lat, lng)', true);
+                        return;
+                    }
+                    
+                    const lat = parseFloat(coordsArray[0]);
+                    const lng = parseFloat(coordsArray[1]);
+                    
+                    if (isNaN(lat) || isNaN(lng)) {
+                        showStatusMessage('Coordenadas devem ser números válidos', true);
+                        return;
+                    }
+                    
+                    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+                        showStatusMessage('Coordenadas fora do intervalo válido', true);
+                        return;
+                    }
+                    
+                    // Verificar se WO já existe
+                    if (markers[wo]) {
+                        showStatusMessage('WO já existe no sistema', true);
+                        return;
+                    }
+                    
+                    // Obter prioridade
+                    let priority = null;
+                    if (document.getElementById('new-priority-critica').checked) {
+                        priority = 'critica';
+                    } else if (document.getElementById('new-priority-major').checked) {
+                        priority = 'major';
+                    }
+                    
+                    // Criar novo objeto de localização
+                    const newLocation = {
+                        wo: wo.toUpperCase(),
+                        pdo: pdo,
+                        descricao: desc,
+                        lat: lat,
+                        lng: lng,
+                        status: 'aberta',
+                        priority: priority,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    };
+                    
+                    try {
+                        // Adicionar ao Firestore
+                        await db.collection('locations').doc(wo).set(newLocation);
                         showStatusMessage('WO adicionada com sucesso!');
                         
                         // Limpar formulário
@@ -672,16 +688,20 @@
                         document.getElementById('new-coords').value = '';
                         document.getElementById('new-priority-critica').checked = false;
                         document.getElementById('new-priority-major').checked = false;
-                    })
-                    .catch(error => {
+                    } catch (error) {
                         console.error("Erro ao adicionar WO:", error);
                         showStatusMessage('Erro ao adicionar WO', true);
-                    });
-            });
-            
-            // Inicializar
-            initializeData();
-            loadData();
+                    }
+                });
+                
+                // Inicializar dados e carregar
+                await initializeData();
+                loadData();
+                
+            } catch (error) {
+                console.error("Erro na inicialização:", error);
+                showStatusMessage('Erro ao inicializar o aplicativo', true);
+            }
         });
     </script>
 </body>
