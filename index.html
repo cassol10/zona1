@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa Interativo de Obras</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Font Awesome para ícones -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        
+        #map-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        
+        #header {
+            background: #2c3e50;
+            color: white;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        #controls {
+            background: #ecf0f1;
+            padding: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        #map {
+            flex-grow: 1;
+            width: 100%;
+        }
+        
+        .filter-btn {
+            padding: 5px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .filter-btn.active {
+            font-weight: bold;
+        }
+        
+        #aberta-btn { background-color: #2ecc71; color: white; }
+        #fechada-btn { background-color: #e74c3c; color: white; }
+        #pendente-btn { background-color: #f39c12; color: white; }
+        #todas-btn { background-color: #3498db; color: white; }
+        
+        #search-container {
+            flex-grow: 1;
+            max-width: 300px;
+        }
+        
+        #search {
+            width: 100%;
+            padding: 5px;
+            border-radius: 4px;
+            border: 1px solid #bdc3c7;
+        }
+        
+        .info-window {
+            font-family: Arial, sans-serif;
+            line-height: 1.4;
+            padding: 10px;
+            min-width: 250px;
+        }
+        
+        .status-checkbox {
+            margin: 5px 0;
+        }
+        
+        .leaflet-popup-content {
+            width: auto !important;
+        }
+        
+        .coordinates {
+            font-size: 0.9em;
+            color: #7f8c8d;
+            margin-top: 5px;
+        }
+        
+        #export-btn, #import-btn {
+            background-color: #9b59b6;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        #status-message {
+            margin-left: auto;
+            color: #27ae60;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="map-container">
+        <div id="header">
+            <h1>Mapa Interativo de Obras</h1>
+            <div id="status-message"></div>
+        </div>
+        
+        <div id="controls">
+            <div id="search-container">
+                <input type="text" id="search" placeholder="Buscar por WO ou PDO...">
+            </div>
+            
+            <button id="todas-btn" class="filter-btn active">Todas</button>
+            <button id="aberta-btn" class="filter-btn">Abertas</button>
+            <button id="fechada-btn" class="filter-btn">Fechadas</button>
+            <button id="pendente-btn" class="filter-btn">Pendentes</button>
+            
+            <button id="export-btn"><i class="fas fa-download"></i> Exportar</button>
+            <button id="import-btn"><i class="fas fa-upload"></i> Importar</button>
+            <input type="file" id="file-input" style="display: none;">
+        </div>
+        
+        <div id="map"></div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+    
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/10.5.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.5.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.5.2/firebase-auth-compat.js"></script>
+    
+    <script>
+        // Configuração do Firebase (substitua com suas credenciais)
+        const firebaseConfig = {
+  apiKey: "AIzaSyAHuqEk_oWEI8CMoozQjBVTZiJXEkH44_8",
+  authDomain: "mapa-z2.firebaseapp.com",
+  databaseURL: "https://mapa-z2-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "mapa-z2",
+  storageBucket: "mapa-z2.firebasestorage.app",
+  messagingSenderId: "28471807080",
+  appId: "1:28471807080:web:2fac85ec9aefe915423fdd"
+};
+        
+        // Inicializar Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+        
+        // Autenticação anônima
+        auth.signInAnonymously().catch(error => {
+            console.error("Erro de autenticação:", error);
+        });
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            // Inicializar o mapa
+            const map = L.map('map').setView([38.822771, -9.144502], 13);
+            
+            // Adicionar camada do OpenStreetMap
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+            
+            // Cluster de marcadores
+            const markersCluster = L.markerClusterGroup();
+            map.addLayer(markersCluster);
+            
+            // Objeto para armazenar os marcadores
+            const markers = {};
+            
+            // Função para obter ícone com base no status
+            function getStatusIcon(status) {
+                let color;
+                switch(status) {
+                    case 'fechada': color = 'red'; break;
+                    case 'aberta': color = 'green'; break;
+                    case 'pendente': color = 'orange'; break;
+                    default: color = 'blue';
+                }
+                
+                return L.icon({
+                    iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
+                    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+                    iconSize: [25, 41],
+                    iconAnchor: [12, 41],
+                    popupAnchor: [1, -34],
+                    shadowSize: [41, 41]
+                });
+            }
+            
+            // Função para criar conteúdo do popup
+            function createPopupContent(location) {
+                return `
+                    <div class="info-window">
+                        <strong>WO:</strong> ${location.wo}<br>
+                        <strong>PDO:</strong> ${location.pdo}<br>
+                        <strong>Descrição:</strong> ${location.descricao}<br>
+                        <div class="coordinates">
+                            Coord: ${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}
+                        </div>
+                        <br>
+                        <strong>Status:</strong><br>
+                        <div class="status-checkbox">
+                            <input type="radio" id="aberta-${location.wo}" name="status-${location.wo}" value="aberta" 
+                                ${location.status === 'aberta' ? 'checked' : ''}>
+                            <label for="aberta-${location.wo}">Aberta</label><br>
+                            
+                            <input type="radio" id="fechada-${location.wo}" name="status-${location.wo}" value="fechada" 
+                                ${location.status === 'fechada' ? 'checked' : ''}>
+                            <label for="fechada-${location.wo}">Fechada</label><br>
+                            
+                            <input type="radio" id="pendente-${location.wo}" name="status-${location.wo}" value="pendente" 
+                                ${location.status === 'pendente' ? 'checked' : ''}>
+                            <label for="pendente-${location.wo}">Pendente</label>
+                        </div>
+                        <br>
+                        <a href="https://www.google.com/maps?q=${location.lat},${location.lng}" target="_blank" style="color: #3498db;">
+                            <i class="fas fa-external-link-alt"></i> Abrir no Google Maps
+                        </a>
+                    </div>
+                `;
+            }
+            
+            // Função para adicionar marcador ao mapa
+            function addMarker(location) {
+                const marker = L.marker([location.lat, location.lng], {
+                    icon: getStatusIcon(location.status),
+                    title: `${location.wo} - ${location.pdo}`
+                });
+                
+                marker.bindPopup(createPopupContent(location));
+                
+                marker.on('popupopen', function() {
+                    // Adicionar listeners para os radio buttons
+                    document.querySelectorAll(`input[name="status-${location.wo}"]`).forEach(radio => {
+                        radio.addEventListener('change', (e) => {
+                            const newStatus = e.target.value;
+                            marker.setIcon(getStatusIcon(newStatus));
+                            location.status = newStatus;
+                            
+                            // Atualizar no Firestore
+                            db.collection('locations').doc(location.wo).update({
+                                status: newStatus
+                            }).then(() => {
+                                showStatusMessage('Status atualizado com sucesso!');
+                            }).catch(error => {
+                                console.error("Erro ao atualizar status:", error);
+                            });
+                        });
+                    });
+                });
+                
+                markers[location.wo] = marker;
+                markersCluster.addLayer(marker);
+                
+                // Adicionar dados extras ao marcador para busca
+                marker.wo = location.wo;
+                marker.pdo = location.pdo;
+            }
+            
+            // Função para mostrar mensagem de status
+            function showStatusMessage(message, isError = false) {
+                const statusElement = document.getElementById('status-message');
+                statusElement.textContent = message;
+                statusElement.style.color = isError ? '#e74c3c' : '#27ae60';
+                
+                setTimeout(() => {
+                    statusElement.textContent = '';
+                }, 3000);
+            }
+            
+            // Carregar dados do Firestore
+            function loadData() {
+                db.collection('locations').onSnapshot((snapshot) => {
+                    snapshot.docChanges().forEach((change) => {
+                        const data = change.doc.data();
+                        
+                        if (change.type === 'added' || change.type === 'modified') {
+                            if (markers[data.wo]) {
+                                // Atualizar marcador existente
+                                markers[data.wo].setIcon(getStatusIcon(data.status));
+                                markers[data.wo].setPopupContent(createPopupContent(data));
+                            } else {
+                                // Adicionar novo marcador
+                                addMarker(data);
+                            }
+                        }
+                        
+                        if (change.type === 'removed') {
+                            if (markers[data.wo]) {
+                                markersCluster.removeLayer(markers[data.wo]);
+                                delete markers[data.wo];
+                            }
+                        }
+                    });
+                }, (error) => {
+                    console.error("Erro ao carregar dados:", error);
+                });
+            }
+            
+            // Inicializar dados padrão se a coleção estiver vazia
+            function initializeData() {
+                const defaultLocations = [
+                    {
+                        wo: 'WO 16903160',
+                        pdo: 'PDO-92-LOU-0161.33',
+                        descricao: 'Normal',
+                        lat: 38.817256,
+                        lng: -9.165423,
+                        status: 'normal'
+                    },
+                    {
+                        wo: 'WO 16910762',
+                        pdo: 'PDO-92-LOU-0010.13',
+                        descricao: 'Normal',
+                        lat: 38.837121,
+                        lng: -9.156680,
+                        status: 'normal'
+                    },
+                    {
+                        wo: 'WO 16922859',
+                        pdo: 'PDO-92-LOU-1259.2',
+                        descricao: 'Normal',
+                        lat: 38.822771,
+                        lng: -9.144502,
+                        status: 'normal'
+                    }
+                ];
+                
+                db.collection('locations').get().then((snapshot) => {
+                    if (snapshot.empty) {
+                        defaultLocations.forEach(location => {
+                            db.collection('locations').doc(location.wo).set(location);
+                        });
+                    }
+                });
+            }
+            
+            // Filtros
+            document.getElementById('todas-btn').addEventListener('click', () => {
+                markersCluster.clearLayers();
+                Object.values(markers).forEach(marker => markersCluster.addLayer(marker));
+                updateActiveFilter('todas-btn');
+            });
+            
+            document.getElementById('aberta-btn').addEventListener('click', () => {
+                markersCluster.clearLayers();
+                Object.values(markers).forEach(marker => {
+                    if (marker.options.icon.options.iconUrl.includes('green')) {
+                        markersCluster.addLayer(marker);
+                    }
+                });
+                updateActiveFilter('aberta-btn');
+            });
+            
+            document.getElementById('fechada-btn').addEventListener('click', () => {
+                markersCluster.clearLayers();
+                Object.values(markers).forEach(marker => {
+                    if (marker.options.icon.options.iconUrl.includes('red')) {
+                        markersCluster.addLayer(marker);
+                    }
+                });
+                updateActiveFilter('fechada-btn');
+            });
+            
+            document.getElementById('pendente-btn').addEventListener('click', () => {
+                markersCluster.clearLayers();
+                Object.values(markers).forEach(marker => {
+                    if (marker.options.icon.options.iconUrl.includes('orange')) {
+                        markersCluster.addLayer(marker);
+                    }
+                });
+                updateActiveFilter('pendente-btn');
+            });
+            
+            function updateActiveFilter(activeId) {
+                document.querySelectorAll('.filter-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                document.getElementById(activeId).classList.add('active');
+            }
+            
+            // Busca
+            document.getElementById('search').addEventListener('input', (e) => {
+                const searchTerm = e.target.value.toLowerCase();
+                
+                if (searchTerm.length > 2) {
+                    let found = false;
+                    
+                    Object.values(markers).forEach(marker => {
+                        if (marker.wo.toLowerCase().includes(searchTerm) || 
+                            marker.pdo.toLowerCase().includes(searchTerm)) {
+                            map.setView(marker.getLatLng(), 15);
+                            marker.openPopup();
+                            found = true;
+                        }
+                    });
+                    
+                    if (!found) {
+                        showStatusMessage('Nenhum resultado encontrado', true);
+                    }
+                }
+            });
+            
+            // Exportar dados
+            document.getElementById('export-btn').addEventListener('click', () => {
+                db.collection('locations').get().then((snapshot) => {
+                    const data = [];
+                    snapshot.forEach(doc => {
+                        data.push(doc.data());
+                    });
+                    
+                    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'dados-mapa.json';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    
+                    showStatusMessage('Dados exportados com sucesso!');
+                });
+            });
+            
+            // Importar dados
+            document.getElementById('import-btn').addEventListener('click', () => {
+                document.getElementById('file-input').click();
+            });
+            
+            document.getElementById('file-input').addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const data = JSON.parse(event.target.result);
+                        
+                        // Validar dados
+                        if (!Array.isArray(data)) {
+                            throw new Error('Formato de arquivo inválido');
+                        }
+                        
+                        const batch = db.batch();
+                        const locationsRef = db.collection('locations');
+                        
+                        // Limpar dados existentes
+                        batch.delete(locationsRef);
+                        
+                        // Adicionar novos dados
+                        data.forEach(item => {
+                            const docRef = locationsRef.doc(item.wo);
+                            batch.set(docRef, item);
+                        });
+                        
+                        batch.commit().then(() => {
+                            showStatusMessage('Dados importados com sucesso!');
+                        }).catch(error => {
+                            console.error("Erro ao importar dados:", error);
+                            showStatusMessage('Erro ao importar dados', true);
+                        });
+                        
+                    } catch (error) {
+                        console.error("Erro ao processar arquivo:", error);
+                        showStatusMessage('Erro ao processar arquivo', true);
+                    }
+                };
+                reader.readAsText(file);
+            });
+            
+            // Inicializar
+            initializeData();
+            loadData();
+        });
+    </script>
+</body>
+</html>
