@@ -239,6 +239,58 @@
         .status-fechada { background-color: #dc3545; }
         .status-pendente { background-color: #ffc107; color: #212529; }
         
+        /* Popup do Mapa */
+        .leaflet-popup-content {
+            min-width: 200px;
+        }
+        
+        .popup-content {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .popup-status {
+            margin: 10px 0;
+        }
+        
+        .popup-status label {
+            display: block;
+            margin: 5px 0;
+        }
+        
+        .popup-link {
+            display: block;
+            margin-top: 10px;
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+        
+        .popup-link:hover {
+            text-decoration: underline;
+        }
+        
+        .popup-actions {
+            margin-top: 15px;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .popup-btn {
+            padding: 5px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .popup-edit {
+            background-color: var(--accent-color);
+            color: white;
+        }
+        
+        .popup-delete {
+            background-color: #dc3545;
+            color: white;
+        }
+        
         /* Responsividade */
         @media (max-width: 768px) {
             #sidebar {
@@ -307,6 +359,14 @@
                     <label for="new-coords">Coordenadas (lat, lng):</label>
                     <input type="text" id="new-coords" placeholder="Ex: 38.757450, -9.147659">
                 </div>
+                <div class="form-group">
+                    <label>Status:</label>
+                    <select id="new-status">
+                        <option value="aberta">Aberta</option>
+                        <option value="pendente">Pendente</option>
+                        <option value="fechada">Fechada</option>
+                    </select>
+                </div>
                 <button id="add-wo-btn">Adicionar WO</button>
             </div>
             
@@ -355,6 +415,8 @@
             fechada: true,
             pendente: true
         };
+        let editMode = false;
+        let currentEditWo = null;
         
         // Funções auxiliares
         function showStatusMessage(message, isError = false) {
@@ -387,6 +449,46 @@
             });
         }
         
+        function createPopupContent(wo) {
+            return `
+                <div class="popup-content">
+                    <h4>${wo.wo}</h4>
+                    ${wo.pdo ? `<p><strong>PDO:</strong> ${wo.pdo}</p>` : ''}
+                    ${wo.descricao ? `<p><strong>Descrição:</strong> ${wo.descricao}</p>` : ''}
+                    <p><strong>Coordenadas:</strong> ${wo.lat.toFixed(6)}, ${wo.lng.toFixed(6)}</p>
+                    
+                    <div class="popup-status">
+                        <strong>Status:</strong>
+                        <label>
+                            <input type="radio" name="status" value="aberta" ${wo.status === 'aberta' ? 'checked' : ''}>
+                            Aberta
+                        </label>
+                        <label>
+                            <input type="radio" name="status" value="pendente" ${wo.status === 'pendente' ? 'checked' : ''}>
+                            Pendente
+                        </label>
+                        <label>
+                            <input type="radio" name="status" value="fechada" ${wo.status === 'fechada' ? 'checked' : ''}>
+                            Fechada
+                        </label>
+                    </div>
+                    
+                    <a href="https://www.google.com/maps?q=${wo.lat},${wo.lng}" target="_blank" class="popup-link">
+                        <i class="fas fa-external-link-alt"></i> Abrir no Google Maps
+                    </a>
+                    
+                    <div class="popup-actions">
+                        <button class="popup-btn popup-edit" onclick="window.startEditWo('${wo.wo}')">
+                            <i class="fas fa-edit"></i> Editar
+                        </button>
+                        <button class="popup-btn popup-delete" onclick="window.deleteWo('${wo.wo}')">
+                            <i class="fas fa-trash"></i> Excluir
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+        
         // Função para carregar e exibir WOs
         function loadWOs() {
             db.collection('locations').onSnapshot(snapshot => {
@@ -398,17 +500,33 @@
                             // Atualizar marcador existente
                             markers[data.wo].setLatLng([data.lat, data.lng]);
                             markers[data.wo].setIcon(getStatusIcon(data.status));
+                            markers[data.wo].setPopupContent(createPopupContent(data));
                         } else {
                             // Criar novo marcador
                             markers[data.wo] = L.marker([data.lat, data.lng], {
                                 icon: getStatusIcon(data.status)
                             }).addTo(map);
                             
-                            markers[data.wo].bindPopup(`
-                                <b>WO:</b> ${data.wo}<br>
-                                ${data.pdo ? `<b>PDO:</b> ${data.pdo}<br>` : ''}
-                                <b>Status:</b> ${data.status}
-                            `);
+                            markers[data.wo].bindPopup(createPopupContent(data));
+                            
+                            // Adicionar evento para atualizar status
+                            markers[data.wo].on('popupopen', function() {
+                                document.querySelectorAll('.leaflet-popup-content input[name="status"]').forEach(radio => {
+                                    radio.addEventListener('change', async function() {
+                                        const newStatus = this.value;
+                                        try {
+                                            await db.collection('locations').doc(data.wo).update({
+                                                status: newStatus,
+                                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                                            });
+                                            showStatusMessage('Status atualizado com sucesso!');
+                                        } catch (error) {
+                                            console.error("Erro ao atualizar status:", error);
+                                            showStatusMessage('Erro ao atualizar status', true);
+                                        }
+                                    });
+                                });
+                            });
                         }
                     }
                     
@@ -453,43 +571,118 @@
             });
         }
         
-        // Inicialização
-        document.addEventListener('DOMContentLoaded', async () => {
-            try {
-                // Autenticação anônima
-                await auth.signInAnonymously();
-                
-                // Inicializar mapa
-                map = L.map('map').setView([-15.7942, -47.8825], 13);
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                }).addTo(map);
-                
-                // Configurar botão de toggle
-                document.getElementById('sidebar-toggle').addEventListener('click', toggleSidebar);
-                
-                // Configurar filtros do mapa
-                document.querySelectorAll('#map-filters input').forEach(input => {
-                    input.addEventListener('change', function() {
-                        mapFilters[this.id.replace('show-', '')] = this.checked;
-                        updateMapFilters();
-                    });
-                });
-                
-                // Carregar WOs
-                loadWOs();
-                
-            } catch (error) {
-                console.error("Erro na inicialização:", error);
-                showStatusMessage('Erro ao inicializar o aplicativo', true);
+        // Função para adicionar/editar WO
+        async function saveWO() {
+            const wo = document.getElementById('new-wo').value.trim();
+            const pdo = document.getElementById('new-pdo').value.trim();
+            const descricao = document.getElementById('new-desc').value.trim();
+            const coords = document.getElementById('new-coords').value.trim();
+            const status = document.getElementById('new-status').value;
+            
+            // Validar campos obrigatórios
+            if (!wo || !coords) {
+                showStatusMessage('Número WO e coordenadas são obrigatórios', true);
+                return;
             }
-        });
+            
+            // Validar coordenadas
+            const coordsArray = coords.split(',').map(c => parseFloat(c.trim()));
+            if (coordsArray.length !== 2 || isNaN(coordsArray[0]) || isNaN(coordsArray[1])) {
+                showStatusMessage('Formato de coordenadas inválido (use: lat, lng)', true);
+                return;
+            }
+            
+            const [lat, lng] = coordsArray;
+            
+            const woData = {
+                wo,
+                pdo: pdo || null,
+                descricao: descricao || null,
+                lat,
+                lng,
+                status,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+            
+            try {
+                if (editMode) {
+                    // Modo edição
+                    await db.collection('locations').doc(currentEditWo).update(woData);
+                    showStatusMessage(`WO ${wo} atualizada com sucesso!`);
+                    cancelEdit();
+                } else {
+                    // Modo adição
+                    await db.collection('locations').doc(wo).set({
+                        ...woData,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    showStatusMessage(`WO ${wo} adicionada com sucesso!`);
+                    resetForm();
+                }
+            } catch (error) {
+                console.error("Erro ao salvar WO:", error);
+                showStatusMessage('Erro ao salvar WO', true);
+            }
+        }
+        
+        // Função para iniciar edição
+        window.startEditWo = function(wo) {
+            const marker = markers[wo];
+            if (!marker) return;
+            
+            const woData = marker.options.woData || {};
+            
+            document.getElementById('new-wo').value = wo;
+            document.getElementById('new-pdo').value = woData.pdo || '';
+            document.getElementById('new-desc').value = woData.descricao || '';
+            document.getElementById('new-coords').value = `${woData.lat}, ${woData.lng}`;
+            document.getElementById('new-status').value = woData.status || 'aberta';
+            
+            document.getElementById('add-wo-btn').textContent = 'Atualizar WO';
+            editMode = true;
+            currentEditWo = wo;
+            
+            toggleSidebar();
+        };
+        
+        // Função para cancelar edição
+        function cancelEdit() {
+            resetForm();
+            editMode = false;
+            currentEditWo = null;
+            document.getElementById('add-wo-btn').textContent = 'Adicionar WO';
+        }
+        
+        // Função para resetar formulário
+        function resetForm() {
+            document.getElementById('new-wo').value = '';
+            document.getElementById('new-pdo').value = '';
+            document.getElementById('new-desc').value = '';
+            document.getElementById('new-coords').value = '';
+            document.getElementById('new-status').value = 'aberta';
+        }
+        
+        // Função para deletar WO
+        window.deleteWo = async function(wo) {
+            if (confirm(`Tem certeza que deseja excluir a WO ${wo}?`)) {
+                try {
+                    await db.collection('locations').doc(wo).delete();
+                    showStatusMessage(`WO ${wo} excluída com sucesso!`);
+                    
+                    if (editMode && currentEditWo === wo) {
+                        cancelEdit();
+                    }
+                } catch (error) {
+                    console.error("Erro ao excluir WO:", error);
+                    showStatusMessage('Erro ao excluir WO', true);
+                }
+            }
+        };
         
         // Função para atualizar filtros do mapa
         function updateMapFilters() {
             Object.values(markers).forEach(marker => {
-                const status = marker.options.icon.options.iconUrl.includes('green') ? 'aberta' : 
-                              marker.options.icon.options.iconUrl.includes('red') ? 'fechada' : 'pendente';
+                const status = marker.options.woData?.status || 'aberta';
                 
                 if (mapFilters.all || mapFilters[status]) {
                     if (!map.hasLayer(marker)) {
@@ -502,6 +695,67 @@
                 }
             });
         }
+        
+        // Inicialização
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                // Autenticação anônima
+                await auth.signInAnonymously();
+                
+                // Inicializar mapa centralizado em Lisboa
+                map = L.map('map').setView([38.7223, -9.1393], 13);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }).addTo(map);
+                
+                // Configurar botão de toggle
+                document.getElementById('sidebar-toggle').addEventListener('click', toggleSidebar);
+                
+                // Configurar filtros do mapa
+                document.querySelectorAll('#map-filters input').forEach(input => {
+                    input.addEventListener('change', function() {
+                        mapFilters[this.id.replace('show-', '')] = this.checked;
+                        
+                        // Atualizar o checkbox "all"
+                        if (this.id === 'show-all') {
+                            document.getElementById('show-aberta').checked = this.checked;
+                            document.getElementById('show-fechada').checked = this.checked;
+                            document.getElementById('show-pendente').checked = this.checked;
+                            
+                            mapFilters.aberta = this.checked;
+                            mapFilters.fechada = this.checked;
+                            mapFilters.pendente = this.checked;
+                        } else {
+                            // Se desmarcar algum filtro específico, desmarca o "all"
+                            if (!this.checked) {
+                                document.getElementById('show-all').checked = false;
+                                mapFilters.all = false;
+                            }
+                            
+                            // Se todos os filtros específicos estiverem marcados, marca o "all"
+                            if (document.getElementById('show-aberta').checked &&
+                                document.getElementById('show-fechada').checked &&
+                                document.getElementById('show-pendente').checked) {
+                                document.getElementById('show-all').checked = true;
+                                mapFilters.all = true;
+                            }
+                        }
+                        
+                        updateMapFilters();
+                    });
+                });
+                
+                // Configurar botão de salvar
+                document.getElementById('add-wo-btn').addEventListener('click', saveWO);
+                
+                // Carregar WOs
+                loadWOs();
+                
+            } catch (error) {
+                console.error("Erro na inicialização:", error);
+                showStatusMessage('Erro ao inicializar o aplicativo', true);
+            }
+        });
     </script>
 </body>
 </html>
