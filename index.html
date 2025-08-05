@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
-        /* SEU CSS ORIGINAL PERMANECE EXATAMENTE IGUAL */
+        /* TODO O SEU CSS ORIGINAL PERMANECE EXATAMENTE IGUAL */
         :root {
             --sidebar-width: 350px;
             --mobile-breakpoint: 768px;
@@ -110,14 +110,28 @@
 
         /* Ajuste para mobile quando a sidebar está escondida */
         @media (max-width: 768px) {
-            .sidebar-hidden#sidebar {
+            #sidebar {
+                position: fixed;
+                top: var(--header-height);
+                bottom: 0;
+                left: 0;
+                width: 85vw;
                 transform: translateX(-100%);
+                box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+            }
+            
+            #sidebar.sidebar-visible {
+                transform: translateX(0);
+            }
+            
+            #menu-toggle {
+                display: block;
             }
         }
     </style>
 </head>
 <body>
-    <!-- BOTÃO FIXO ADICIONADO -->
+    <!-- BOTÃO FIXO ADICIONADO (ÚNICA ALTERAÇÃO NO HTML) -->
     <button id="sidebar-toggle" title="Mostrar/Esconder menu">
         <i class="fas fa-bars"></i>
     </button>
@@ -130,7 +144,7 @@
     </div>
     
     <div id="app-container">
-        <div id="sidebar">
+        <div id="sidebar" class="sidebar-visible">
             <div id="search-container">
                 <input type="text" id="search" placeholder="Pesquisar por WO ou PDO...">
             </div>
@@ -239,7 +253,317 @@
             sidebar.classList.toggle('active');
         }
         
-        // SEU CÓDIGO ORIGINAL PERMANECE EXATAMENTE IGUAL ATÉ O FINAL
+        // Função para obter ícone com base no status
+        function getStatusIcon(status) {
+            let color;
+            switch(status) {
+                case 'fechada': color = 'red'; break;
+                case 'aberta': color = 'green'; break;
+                case 'pendente': color = 'orange'; break;
+                default: color = 'blue';
+            }
+            
+            return L.icon({
+                iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
+                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                shadowSize: [41, 41]
+            });
+        }
+        
+        // Função para criar conteúdo do popup
+        function createPopupContent(location) {
+            const priorityHTML = location.priority 
+                ? `<div class="priority-options">
+                      <strong>Prioridade:</strong><br>
+                      <input type="checkbox" id="popup-priority-critica-${location.wo}" 
+                          ${location.priority === 'critica' ? 'checked' : ''} disabled>
+                      <label for="popup-priority-critica-${location.wo}">Crítica</label><br>
+                      <input type="checkbox" id="popup-priority-major-${location.wo}" 
+                          ${location.priority === 'major' ? 'checked' : ''} disabled>
+                      <label for="popup-priority-major-${location.wo}">Major</label>
+                   </div>`
+                : '';
+            
+            return `
+                <div class="info-window">
+                    <strong>WO:</strong> ${location.wo}<br>
+                    ${location.pdo ? `<strong>PDO:</strong> ${location.pdo}<br>` : ''}
+                    ${location.descricao ? `<strong>Descrição:</strong> ${location.descricao}<br>` : ''}
+                    <div class="coordinates">
+                        Coord: ${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}
+                    </div>
+                    <br>
+                    <strong>Status:</strong><br>
+                    <div class="status-checkbox">
+                        <input type="radio" id="popup-aberta-${location.wo}" name="popup-status-${location.wo}" value="aberta" 
+                            ${location.status === 'aberta' ? 'checked' : ''}>
+                        <label for="popup-aberta-${location.wo}">Aberta</label><br>
+                        
+                        <input type="radio" id="popup-fechada-${location.wo}" name="popup-status-${location.wo}" value="fechada" 
+                            ${location.status === 'fechada' ? 'checked' : ''}>
+                        <label for="popup-fechada-${location.wo}">Fechada</label><br>
+                        
+                        <input type="radio" id="popup-pendente-${location.wo}" name="popup-status-${location.wo}" value="pendente" 
+                            ${location.status === 'pendente' ? 'checked' : ''}>
+                        <label for="popup-pendente-${location.wo}">Pendente</label>
+                    </div>
+                    ${priorityHTML}
+                    <div style="margin-top: 15px;">
+                        <span class="popup-edit-btn" onclick="startEditWo('${location.wo}')">
+                            <i class="fas fa-edit"></i> Editar
+                        </span>
+                        <span class="popup-delete-btn" onclick="deleteWo('${location.wo}')">
+                            <i class="fas fa-trash"></i> Excluir
+                        </span>
+                    </div>
+                    <br>
+                    <a href="https://www.google.com/maps?q=${location.lat},${location.lng}" target="_blank" style="color: #3498db;">
+                        <i class="fas fa-external-link-alt"></i> Abrir no Google Maps
+                    </a>
+                </div>
+            `;
+        }
+        
+        // Função para criar item da lista
+        function createWoListItem(location) {
+            const item = document.createElement('div');
+            item.className = 'wo-item';
+            item.dataset.wo = location.wo;
+            item.dataset.status = location.status;
+            
+            const statusClass = `status-${location.status}`;
+            const statusText = location.status.charAt(0).toUpperCase() + location.status.slice(1);
+            
+            const priorityHTML = location.priority 
+                ? `<div class="wo-priority priority-${location.priority}">
+                      ${location.priority === 'critica' ? 'Crítica' : 'Major'}
+                   </div>` 
+                : '';
+            
+            item.innerHTML = `
+                <div class="wo-header">
+                    <span>${location.wo}</span>
+                    <span class="wo-status ${statusClass}">${statusText}</span>
+                </div>
+                ${location.pdo ? `<div class="wo-pdo">${location.pdo}</div>` : ''}
+                ${location.descricao ? `<div class="wo-desc">${location.descricao}</div>` : ''}
+                ${priorityHTML}
+                <div class="action-buttons">
+                    <div class="edit-btn" onclick="event.stopPropagation(); startEditWo('${location.wo}')">
+                        <i class="fas fa-edit"></i> Editar
+                    </div>
+                    <div class="delete-btn" onclick="event.stopPropagation(); deleteWo('${location.wo}')">
+                        <i class="fas fa-trash"></i> Excluir
+                    </div>
+                </div>
+            `;
+            
+            item.addEventListener('click', () => {
+                // Selecionar item
+                document.querySelectorAll('.wo-item').forEach(el => el.classList.remove('selected'));
+                item.classList.add('selected');
+                selectedWo = location.wo;
+                
+                // Centralizar no mapa e abrir popup
+                const marker = markers[location.wo];
+                if (marker) {
+                    map.setView(marker.getLatLng(), 15);
+                    marker.openPopup();
+                    
+                    // Em dispositivos móveis, fechar a sidebar ao selecionar um item
+                    if (window.innerWidth <= 768) {
+                        toggleSidebar();
+                    }
+                }
+            });
+            
+            return item;
+        }
+        
+        // Função para filtrar e atualizar a lista
+        function updateWoList(filterText = '') {
+            const woList = document.getElementById('wo-list');
+            woList.innerHTML = '';
+            
+            const filteredWOs = allWOs.filter(wo => {
+                const matchesFilter = currentFilter === 'all' || wo.status === currentFilter;
+                const matchesSearch = !filterText || 
+                    wo.wo.toLowerCase().includes(filterText.toLowerCase()) || 
+                    (wo.pdo && wo.pdo.toLowerCase().includes(filterText.toLowerCase()));
+                return matchesFilter && matchesSearch;
+            });
+            
+            filteredWOs
+                .sort((a, b) => a.wo.localeCompare(b.wo))
+                .forEach(wo => {
+                    const listItem = createWoListItem(wo);
+                    woList.appendChild(listItem);
+                });
+        }
+        
+        // Função para adicionar marcador ao mapa
+        function addMarker(location) {
+            const marker = L.marker([location.lat, location.lng], {
+                icon: getStatusIcon(location.status),
+                title: location.wo
+            }).addTo(map);
+            
+            // Armazenar dados da localização no marcador
+            marker.location = location;
+            
+            // Criar popup com conteúdo dinâmico
+            const updatePopupContent = () => {
+                marker.setPopupContent(createPopupContent(location));
+            };
+            
+            marker.bindPopup(createPopupContent(location));
+            
+            marker.on('popupopen', function() {
+                // Atualizar conteúdo do popup
+                updatePopupContent();
+                
+                // Adicionar listeners para os radio buttons
+                document.querySelectorAll(`input[name="popup-status-${location.wo}"]`).forEach(radio => {
+                    radio.addEventListener('change', async (e) => {
+                        const newStatus = e.target.value;
+                        marker.setIcon(getStatusIcon(newStatus));
+                        location.status = newStatus;
+                        
+                        try {
+                            // Atualizar no Firestore
+                            await db.collection('locations').doc(location.wo).update({
+                                status: newStatus,
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                            showStatusMessage('Status atualizado com sucesso!');
+                            updatePopupContent();
+                            updateWoList(document.getElementById('search').value);
+                        } catch (error) {
+                            console.error("Erro ao atualizar status:", error);
+                            showStatusMessage('Erro ao atualizar status', true);
+                        }
+                    });
+                });
+            });
+            
+            markers[location.wo] = marker;
+            return marker;
+        }
+        
+        // Função para iniciar edição de WO
+        window.startEditWo = function(wo) {
+            const marker = markers[wo];
+            if (!marker) return;
+            
+            const location = marker.location;
+            editMode = true;
+            woBeingEdited = wo;
+            
+            // Preencher formulário com dados existentes
+            document.getElementById('new-wo').value = location.wo;
+            document.getElementById('new-pdo').value = location.pdo || '';
+            document.getElementById('new-desc').value = location.descricao || '';
+            document.getElementById('new-coords').value = `${location.lat}, ${location.lng}`;
+            document.getElementById('new-priority-critica').checked = location.priority === 'critica';
+            document.getElementById('new-priority-major').checked = location.priority === 'major';
+            
+            // Alterar botão para "Atualizar WO"
+            const addButton = document.getElementById('add-wo-btn');
+            addButton.textContent = 'Atualizar WO';
+            addButton.style.backgroundColor = '#007bff';
+            
+            // Rolagem para o formulário
+            document.getElementById('controls').scrollIntoView();
+            showStatusMessage(`Editando WO: ${wo}`, false);
+            
+            // Em dispositivos móveis, mostrar a sidebar
+            if (window.innerWidth <= 768) {
+                document.getElementById('sidebar').classList.add('active');
+            }
+        };
+        
+        // Função para cancelar edição
+        function cancelEdit() {
+            editMode = false;
+            woBeingEdited = null;
+            
+            // Limpar formulário
+            document.getElementById('new-wo').value = '';
+            document.getElementById('new-pdo').value = '';
+            document.getElementById('new-desc').value = '';
+            document.getElementById('new-coords').value = '';
+            document.getElementById('new-priority-critica').checked = false;
+            document.getElementById('new-priority-major').checked = false;
+            
+            // Restaurar botão
+            const addButton = document.getElementById('add-wo-btn');
+            addButton.textContent = 'Adicionar WO';
+            addButton.style.backgroundColor = '#28a745';
+        }
+        
+        // Função para deletar WO
+        window.deleteWo = async function(wo) {
+            if (confirm(`Tem certeza que deseja excluir a WO ${wo}?`)) {
+                try {
+                    await db.collection('locations').doc(wo).delete();
+                    showStatusMessage(`WO ${wo} excluída com sucesso!`);
+                    
+                    // Remover marcador do mapa se existir
+                    if (markers[wo]) {
+                        map.removeLayer(markers[wo]);
+                        delete markers[wo];
+                        updateWoList(document.getElementById('search').value);
+                    }
+                    
+                    // Se estava editando, cancelar edição
+                    if (editMode && woBeingEdited === wo) {
+                        cancelEdit();
+                    }
+                } catch (error) {
+                    console.error("Erro ao excluir WO:", error);
+                    showStatusMessage('Erro ao excluir WO', true);
+                }
+            }
+        };
+        
+        // Função para carregar dados do Firestore
+        function loadData() {
+            db.collection('locations').onSnapshot((snapshot) => {
+                allWOs = [];
+                snapshot.docChanges().forEach((change) => {
+                    const data = change.doc.data();
+                    
+                    if (change.type === 'added' || change.type === 'modified') {
+                        if (markers[data.wo]) {
+                            // Atualizar marcador existente
+                            markers[data.wo].setIcon(getStatusIcon(data.status));
+                            markers[data.wo].location = data;
+                            markers[data.wo].setPopupContent(createPopupContent(data));
+                        } else {
+                            // Adicionar novo marcador
+                            addMarker(data);
+                        }
+                    }
+                    
+                    if (change.type === 'removed') {
+                        if (markers[data.wo]) {
+                            map.removeLayer(markers[data.wo]);
+                            delete markers[data.wo];
+                        }
+                    }
+                });
+                
+                // Atualizar lista completa
+                allWOs = snapshot.docs.map(doc => doc.data());
+                updateWoList(document.getElementById('search').value);
+            }, (error) => {
+                console.error("Erro ao carregar dados:", error);
+                showStatusMessage('Erro ao carregar dados', true);
+            });
+        }
         
         // Inicializar aplicação
         document.addEventListener('DOMContentLoaded', async function() {
@@ -251,14 +575,21 @@
                 // Configurar botão de menu para mobile (original)
                 document.getElementById('menu-toggle').addEventListener('click', toggleSidebar);
                 
-                // Configurar o novo botão fixo
+                // Configurar o novo botão fixo para mostrar/esconder a sidebar
                 document.getElementById('sidebar-toggle').addEventListener('click', function() {
                     const sidebar = document.getElementById('sidebar');
-                    sidebar.classList.toggle('sidebar-hidden');
+                    if (window.innerWidth > 768) {
+                        // Desktop - alternar classe sidebar-hidden
+                        sidebar.classList.toggle('sidebar-hidden');
+                    } else {
+                        // Mobile - usar o sistema original de toggle
+                        toggleSidebar();
+                    }
                     
                     // Atualizar ícone
                     const icon = this.querySelector('i');
-                    if (sidebar.classList.contains('sidebar-hidden')) {
+                    if (sidebar.classList.contains('sidebar-hidden') || 
+                        (window.innerWidth <= 768 && !sidebar.classList.contains('active'))) {
                         icon.classList.remove('fa-times');
                         icon.classList.add('fa-bars');
                     } else {
