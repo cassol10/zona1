@@ -259,7 +259,7 @@
                 <h3>Adicionar Nova WO</h3>
                 <div class="form-group required">
                     <label for="new-wo">Número WO:</label>
-                    <input type="text" id="new-wo" placeholder="Ex: WO12345678 ou qualquer identificador">
+                    <input type="text" id="new-wo" placeholder="Qualquer identificador (ex: WO123, 456-789)">
                 </div>
                 <div class="form-group">
                     <label for="new-pdo">PDO (opcional):</label>
@@ -309,7 +309,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.5.2/firebase-auth-compat.js"></script>
     
     <script>
-        // Configuração do Firebase (substitua com suas credenciais)
+        // Configuração do Firebase (substitua com suas credenciais REAIS)
         const firebaseConfig = {
           apiKey: "AIzaSyAHuqEk_oWEI8CMoozQjBVTZiJXEkH44_8",
           authDomain: "mapa-z2.firebaseapp.com",
@@ -321,7 +321,13 @@
 };
         
         // Inicializar Firebase
-        const app = firebase.initializeApp(firebaseConfig);
+        let firebaseApp;
+        try {
+            firebaseApp = firebase.initializeApp(firebaseConfig);
+        } catch (error) {
+            firebaseApp = firebase.app();
+        }
+        
         const db = firebase.firestore();
         const auth = firebase.auth();
         
@@ -512,7 +518,8 @@
                         try {
                             // Atualizar no Firestore
                             await db.collection('locations').doc(location.wo).update({
-                                status: newStatus
+                                status: newStatus,
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                             });
                             showStatusMessage('Status atualizado com sucesso!');
                             updatePopupContent();
@@ -633,19 +640,12 @@
             });
         }
         
-        // Função para inicializar dados padrão
-        async function initializeData() {
-            const snapshot = await db.collection('locations').limit(1).get();
-            if (snapshot.empty) {
-                showStatusMessage('Nenhum dado encontrado. O banco de dados está vazio.', false);
-            }
-        }
-        
         // Inicializar aplicação
         document.addEventListener('DOMContentLoaded', async function() {
             try {
                 // Autenticar anonimamente
                 await auth.signInAnonymously();
+                console.log("Autenticado anonimamente com ID:", auth.currentUser.uid);
                 
                 // Inicializar mapa
                 map = L.map('map').setView([38.822771, -9.144502], 13);
@@ -725,7 +725,10 @@
                             // Modo edição - atualizar WO existente
                             if (wo !== woBeingEdited) {
                                 // Se o número WO foi alterado, precisamos criar um novo documento
-                                await db.collection('locations').doc(wo).set(locationData);
+                                await db.collection('locations').doc(wo).set({
+                                    ...locationData,
+                                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                                });
                                 await db.collection('locations').doc(woBeingEdited).delete();
                             } else {
                                 // Atualizar documento existente
@@ -741,8 +744,10 @@
                                 return;
                             }
                             
-                            locationData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
-                            await db.collection('locations').doc(wo).set(locationData);
+                            await db.collection('locations').doc(wo).set({
+                                ...locationData,
+                                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
                             showStatusMessage('WO adicionada com sucesso!');
                             
                             // Limpar formulário
@@ -759,13 +764,17 @@
                     }
                 });
                 
-                // Inicializar dados e carregar
-                await initializeData();
+                // Carregar dados
                 loadData();
                 
             } catch (error) {
                 console.error("Erro na inicialização:", error);
                 showStatusMessage('Erro ao inicializar o aplicativo', true);
+                
+                // Verificar se é erro de permissão
+                if (error.code === 'permission-denied') {
+                    showStatusMessage('Configure as regras de segurança do Firestore', true);
+                }
             }
         });
     </script>
