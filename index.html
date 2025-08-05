@@ -32,7 +32,6 @@
             border-right: 1px solid #dee2e6;
             display: flex;
             flex-direction: column;
-            overflow: hidden;
         }
         
         #map {
@@ -43,11 +42,25 @@
         #header {
             background: #2c3e50;
             color: white;
-            padding: 15px;
-            text-align: center;
+            padding: 10px 15px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+        }
+        
+        #search-container {
+            display: flex;
+            padding: 10px 15px;
+            background: #e9ecef;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        #search {
+            flex: 1;
+            padding: 8px 15px;
+            border: 1px solid #ced4da;
+            border-radius: 20px;
+            font-size: 14px;
         }
         
         #controls {
@@ -89,18 +102,44 @@
             margin-top: 10px;
         }
         
+        #wo-list-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
         #wo-list {
             flex: 1;
             overflow-y: auto;
             padding: 10px;
         }
         
+        /* Custom Scrollbar */
+        #wo-list::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        #wo-list::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        
+        #wo-list::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        
+        #wo-list::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        
         .wo-item {
-            padding: 10px;
+            padding: 12px;
             border-bottom: 1px solid #dee2e6;
             cursor: pointer;
             transition: background-color 0.2s;
             position: relative;
+            min-height: 80px;
         }
         
         .wo-item:hover {
@@ -137,6 +176,7 @@
         
         .wo-desc {
             font-size: 14px;
+            margin-bottom: 5px;
         }
         
         .wo-priority {
@@ -213,10 +253,15 @@
             margin: 5px 0;
         }
         
-        .delete-btn {
+        .action-buttons {
             position: absolute;
             right: 10px;
             bottom: 10px;
+            display: flex;
+            gap: 15px;
+        }
+        
+        .delete-btn {
             color: #dc3545;
             cursor: pointer;
             font-size: 14px;
@@ -230,9 +275,6 @@
         }
         
         .edit-btn {
-            position: absolute;
-            right: 40px;
-            bottom: 10px;
             color: #007bff;
             cursor: pointer;
             font-size: 14px;
@@ -255,6 +297,10 @@
     
     <div id="app-container">
         <div id="sidebar">
+            <div id="search-container">
+                <input type="text" id="search" placeholder="Pesquisar por WO ou PDO...">
+            </div>
+            
             <div id="controls">
                 <h3>Adicionar Nova WO</h3>
                 <div class="form-group required">
@@ -294,7 +340,9 @@
                 <button class="filter-btn" data-filter="pendente">Pendentes</button>
             </div>
             
-            <div id="wo-list"></div>
+            <div id="wo-list-container">
+                <div id="wo-list"></div>
+            </div>
         </div>
         
         <div id="map"></div>
@@ -310,7 +358,7 @@
     
     <script>
         // Configuração do Firebase (substitua com suas credenciais REAIS)
-        const firebaseConfig = {
+       const firebaseConfig = {
           apiKey: "AIzaSyAHuqEk_oWEI8CMoozQjBVTZiJXEkH44_8",
           authDomain: "mapa-z2.firebaseapp.com",
           databaseURL: "https://mapa-z2-default-rtdb.europe-west1.firebasedatabase.app",
@@ -338,6 +386,7 @@
         let selectedWo = null;
         let editMode = false;
         let woBeingEdited = null;
+        let allWOs = [];
         
         // Função para mostrar mensagem de status
         function showStatusMessage(message, isError = false) {
@@ -448,11 +497,13 @@
                 ${location.pdo ? `<div class="wo-pdo">${location.pdo}</div>` : ''}
                 ${location.descricao ? `<div class="wo-desc">${location.descricao}</div>` : ''}
                 ${priorityHTML}
-                <div class="edit-btn" onclick="event.stopPropagation(); startEditWo('${location.wo}')">
-                    <i class="fas fa-edit"></i> Editar
-                </div>
-                <div class="delete-btn" onclick="event.stopPropagation(); deleteWo('${location.wo}')">
-                    <i class="fas fa-trash"></i> Excluir
+                <div class="action-buttons">
+                    <div class="edit-btn" onclick="event.stopPropagation(); startEditWo('${location.wo}')">
+                        <i class="fas fa-edit"></i> Editar
+                    </div>
+                    <div class="delete-btn" onclick="event.stopPropagation(); deleteWo('${location.wo}')">
+                        <i class="fas fa-trash"></i> Excluir
+                    </div>
                 </div>
             `;
             
@@ -473,16 +524,23 @@
             return item;
         }
         
-        // Função para atualizar a lista
-        function updateWoList() {
+        // Função para filtrar e atualizar a lista
+        function updateWoList(filterText = '') {
             const woList = document.getElementById('wo-list');
             woList.innerHTML = '';
             
-            Object.values(markers)
-                .filter(marker => currentFilter === 'all' || marker.location.status === currentFilter)
-                .sort((a, b) => a.location.wo.localeCompare(b.location.wo))
-                .forEach(marker => {
-                    const listItem = createWoListItem(marker.location);
+            const filteredWOs = allWOs.filter(wo => {
+                const matchesFilter = currentFilter === 'all' || wo.status === currentFilter;
+                const matchesSearch = !filterText || 
+                    wo.wo.toLowerCase().includes(filterText.toLowerCase()) || 
+                    (wo.pdo && wo.pdo.toLowerCase().includes(filterText.toLowerCase()));
+                return matchesFilter && matchesSearch;
+            });
+            
+            filteredWOs
+                .sort((a, b) => a.wo.localeCompare(b.wo))
+                .forEach(wo => {
+                    const listItem = createWoListItem(wo);
                     woList.appendChild(listItem);
                 });
         }
@@ -523,7 +581,7 @@
                             });
                             showStatusMessage('Status atualizado com sucesso!');
                             updatePopupContent();
-                            updateWoList();
+                            updateWoList(document.getElementById('search').value);
                         } catch (error) {
                             console.error("Erro ao atualizar status:", error);
                             showStatusMessage('Erro ao atualizar status', true);
@@ -533,7 +591,6 @@
             });
             
             markers[location.wo] = marker;
-            updateWoList();
             return marker;
         }
         
@@ -594,7 +651,7 @@
                     if (markers[wo]) {
                         map.removeLayer(markers[wo]);
                         delete markers[wo];
-                        updateWoList();
+                        updateWoList(document.getElementById('search').value);
                     }
                     
                     // Se estava editando, cancelar edição
@@ -611,6 +668,7 @@
         // Função para carregar dados do Firestore
         function loadData() {
             db.collection('locations').onSnapshot((snapshot) => {
+                allWOs = [];
                 snapshot.docChanges().forEach((change) => {
                     const data = change.doc.data();
                     
@@ -630,10 +688,13 @@
                         if (markers[data.wo]) {
                             map.removeLayer(markers[data.wo]);
                             delete markers[data.wo];
-                            updateWoList();
                         }
                     }
                 });
+                
+                // Atualizar lista completa
+                allWOs = snapshot.docs.map(doc => doc.data());
+                updateWoList(document.getElementById('search').value);
             }, (error) => {
                 console.error("Erro ao carregar dados:", error);
                 showStatusMessage('Erro ao carregar dados', true);
@@ -653,13 +714,18 @@
                     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                 }).addTo(map);
                 
+                // Configurar pesquisa
+                document.getElementById('search').addEventListener('input', (e) => {
+                    updateWoList(e.target.value);
+                });
+                
                 // Configurar filtros
                 document.querySelectorAll('.filter-btn').forEach(btn => {
                     btn.addEventListener('click', function() {
                         document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
                         this.classList.add('active');
                         currentFilter = this.dataset.filter;
-                        updateWoList();
+                        updateWoList(document.getElementById('search').value);
                     });
                 });
                 
