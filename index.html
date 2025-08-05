@@ -66,6 +66,11 @@
             font-weight: bold;
         }
         
+        .form-group.required label:after {
+            content: " *";
+            color: red;
+        }
+        
         .form-group input, .form-group select {
             width: 100%;
             padding: 8px;
@@ -223,6 +228,23 @@
             margin-top: 10px;
             display: inline-block;
         }
+        
+        .edit-btn {
+            position: absolute;
+            right: 40px;
+            bottom: 10px;
+            color: #007bff;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .popup-edit-btn {
+            color: #007bff;
+            cursor: pointer;
+            margin-top: 10px;
+            display: inline-block;
+            margin-right: 15px;
+        }
     </style>
 </head>
 <body>
@@ -235,24 +257,24 @@
         <div id="sidebar">
             <div id="controls">
                 <h3>Adicionar Nova WO</h3>
-                <div class="form-group">
+                <div class="form-group required">
                     <label for="new-wo">Número WO:</label>
-                    <input type="text" id="new-wo" placeholder="Ex: WO 12345678">
+                    <input type="text" id="new-wo" placeholder="Ex: WO12345678 ou qualquer identificador">
                 </div>
                 <div class="form-group">
-                    <label for="new-pdo">PDO:</label>
+                    <label for="new-pdo">PDO (opcional):</label>
                     <input type="text" id="new-pdo" placeholder="Ex: PDO-92-LOU-0161.33">
                 </div>
                 <div class="form-group">
-                    <label for="new-desc">Descrição:</label>
+                    <label for="new-desc">Descrição (opcional):</label>
                     <input type="text" id="new-desc" placeholder="Ex: Manutenção preventiva">
                 </div>
-                <div class="form-group">
+                <div class="form-group required">
                     <label for="new-coords">Coordenadas (lat, lng):</label>
                     <input type="text" id="new-coords" placeholder="Ex: 38.757450, -9.147659">
                 </div>
                 <div class="form-group">
-                    <label>Prioridade:</label>
+                    <label>Prioridade (opcional):</label>
                     <div class="checkbox-group">
                         <input type="checkbox" id="new-priority-critica" name="priority" value="critica">
                         <label for="new-priority-critica">Crítica</label>
@@ -288,15 +310,14 @@
     
     <script>
         // Configuração do Firebase (substitua com suas credenciais)
-       const firebaseConfig = {
-          apiKey: "AIzaSyAHuqEk_oWEI8CMoozQjBVTZiJXEkH44_8",
-          authDomain: "mapa-z2.firebaseapp.com",
-          databaseURL: "https://mapa-z2-default-rtdb.europe-west1.firebasedatabase.app",
-          projectId: "mapa-z2",
-          storageBucket: "mapa-z2.firebasestorage.app",
-          messagingSenderId: "28471807080",
-          appId: "1:28471807080:web:2fac85ec9aefe915423fdd"
-};
+        const firebaseConfig = {
+            apiKey: "SUA_API_KEY",
+            authDomain: "SEU_PROJETO.firebaseapp.com",
+            projectId: "SEU_PROJETO",
+            storageBucket: "SEU_PROJETO.appspot.com",
+            messagingSenderId: "SEU_SENDER_ID",
+            appId: "SEU_APP_ID"
+        };
         
         // Inicializar Firebase
         const app = firebase.initializeApp(firebaseConfig);
@@ -308,6 +329,8 @@
         const markers = {};
         let currentFilter = 'all';
         let selectedWo = null;
+        let editMode = false;
+        let woBeingEdited = null;
         
         // Função para mostrar mensagem de status
         function showStatusMessage(message, isError = false) {
@@ -357,8 +380,8 @@
             return `
                 <div class="info-window">
                     <strong>WO:</strong> ${location.wo}<br>
-                    <strong>PDO:</strong> ${location.pdo}<br>
-                    <strong>Descrição:</strong> ${location.descricao}<br>
+                    ${location.pdo ? `<strong>PDO:</strong> ${location.pdo}<br>` : ''}
+                    ${location.descricao ? `<strong>Descrição:</strong> ${location.descricao}<br>` : ''}
                     <div class="coordinates">
                         Coord: ${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}
                     </div>
@@ -378,8 +401,13 @@
                         <label for="popup-pendente-${location.wo}">Pendente</label>
                     </div>
                     ${priorityHTML}
-                    <div class="popup-delete-btn" onclick="deleteWo('${location.wo}')">
-                        <i class="fas fa-trash"></i> Excluir WO
+                    <div style="margin-top: 15px;">
+                        <span class="popup-edit-btn" onclick="startEditWo('${location.wo}')">
+                            <i class="fas fa-edit"></i> Editar
+                        </span>
+                        <span class="popup-delete-btn" onclick="deleteWo('${location.wo}')">
+                            <i class="fas fa-trash"></i> Excluir
+                        </span>
                     </div>
                     <br>
                     <a href="https://www.google.com/maps?q=${location.lat},${location.lng}" target="_blank" style="color: #3498db;">
@@ -410,9 +438,12 @@
                     <span>${location.wo}</span>
                     <span class="wo-status ${statusClass}">${statusText}</span>
                 </div>
-                <div class="wo-pdo">${location.pdo}</div>
-                <div class="wo-desc">${location.descricao}</div>
+                ${location.pdo ? `<div class="wo-pdo">${location.pdo}</div>` : ''}
+                ${location.descricao ? `<div class="wo-desc">${location.descricao}</div>` : ''}
                 ${priorityHTML}
+                <div class="edit-btn" onclick="event.stopPropagation(); startEditWo('${location.wo}')">
+                    <i class="fas fa-edit"></i> Editar
+                </div>
                 <div class="delete-btn" onclick="event.stopPropagation(); deleteWo('${location.wo}')">
                     <i class="fas fa-trash"></i> Excluir
                 </div>
@@ -453,7 +484,7 @@
         function addMarker(location) {
             const marker = L.marker([location.lat, location.lng], {
                 icon: getStatusIcon(location.status),
-                title: `${location.wo} - ${location.pdo}`
+                title: location.wo
             }).addTo(map);
             
             // Armazenar dados da localização no marcador
@@ -495,6 +526,53 @@
             
             markers[location.wo] = marker;
             updateWoList();
+            return marker;
+        }
+        
+        // Função para iniciar edição de WO
+        window.startEditWo = function(wo) {
+            const marker = markers[wo];
+            if (!marker) return;
+            
+            const location = marker.location;
+            editMode = true;
+            woBeingEdited = wo;
+            
+            // Preencher formulário com dados existentes
+            document.getElementById('new-wo').value = location.wo;
+            document.getElementById('new-pdo').value = location.pdo || '';
+            document.getElementById('new-desc').value = location.descricao || '';
+            document.getElementById('new-coords').value = `${location.lat}, ${location.lng}`;
+            document.getElementById('new-priority-critica').checked = location.priority === 'critica';
+            document.getElementById('new-priority-major').checked = location.priority === 'major';
+            
+            // Alterar botão para "Atualizar WO"
+            const addButton = document.getElementById('add-wo-btn');
+            addButton.textContent = 'Atualizar WO';
+            addButton.style.backgroundColor = '#007bff';
+            
+            // Rolagem para o formulário
+            document.getElementById('controls').scrollIntoView();
+            showStatusMessage(`Editando WO: ${wo}`, false);
+        };
+        
+        // Função para cancelar edição
+        function cancelEdit() {
+            editMode = false;
+            woBeingEdited = null;
+            
+            // Limpar formulário
+            document.getElementById('new-wo').value = '';
+            document.getElementById('new-pdo').value = '';
+            document.getElementById('new-desc').value = '';
+            document.getElementById('new-coords').value = '';
+            document.getElementById('new-priority-critica').checked = false;
+            document.getElementById('new-priority-major').checked = false;
+            
+            // Restaurar botão
+            const addButton = document.getElementById('add-wo-btn');
+            addButton.textContent = 'Adicionar WO';
+            addButton.style.backgroundColor = '#28a745';
         }
         
         // Função para deletar WO
@@ -509,6 +587,11 @@
                         map.removeLayer(markers[wo]);
                         delete markers[wo];
                         updateWoList();
+                    }
+                    
+                    // Se estava editando, cancelar edição
+                    if (editMode && woBeingEdited === wo) {
+                        cancelEdit();
                     }
                 } catch (error) {
                     console.error("Erro ao excluir WO:", error);
@@ -551,41 +634,9 @@
         
         // Função para inicializar dados padrão
         async function initializeData() {
-            const defaultLocations = [
-                {
-                    wo: 'WO 16903160',
-                    pdo: 'PDO-92-LOU-0161.33',
-                    descricao: 'Normal',
-                    lat: 38.817256,
-                    lng: -9.165423,
-                    status: 'aberta'
-                },
-                {
-                    wo: 'WO 16910762',
-                    pdo: 'PDO-92-LOU-0010.13',
-                    descricao: 'Normal',
-                    lat: 38.837121,
-                    lng: -9.156680,
-                    status: 'aberta'
-                },
-                {
-                    wo: 'WO 16922859',
-                    pdo: 'PDO-92-LOU-1259.2',
-                    descricao: 'Normal',
-                    lat: 38.822771,
-                    lng: -9.144502,
-                    status: 'aberta'
-                }
-            ];
-            
-            const snapshot = await db.collection('locations').get();
+            const snapshot = await db.collection('locations').limit(1).get();
             if (snapshot.empty) {
-                const batch = db.batch();
-                defaultLocations.forEach(location => {
-                    const docRef = db.collection('locations').doc(location.wo);
-                    batch.set(docRef, location);
-                });
-                await batch.commit();
+                showStatusMessage('Nenhum dado encontrado. O banco de dados está vazio.', false);
             }
         }
         
@@ -611,22 +662,17 @@
                     });
                 });
                 
-                // Configurar botão de adicionar WO
+                // Configurar botão de adicionar/atualizar WO
                 document.getElementById('add-wo-btn').addEventListener('click', async function() {
-                    const wo = document.getElementById('new-wo').value.trim();
-                    const pdo = document.getElementById('new-pdo').value.trim();
-                    const desc = document.getElementById('new-desc').value.trim();
-                    const coords = document.getElementById('new-coords').value.trim();
+                    const woInput = document.getElementById('new-wo');
+                    const coordsInput = document.getElementById('new-coords');
                     
-                    // Validar campos
-                    if (!wo || !pdo || !desc || !coords) {
-                        showStatusMessage('Preencha todos os campos', true);
-                        return;
-                    }
+                    const wo = woInput.value.trim();
+                    const coords = coordsInput.value.trim();
                     
-                    // Validar formato WO
-                    if (!wo.match(/^WO\s\d{8}$/i)) {
-                        showStatusMessage('Formato WO inválido (ex: WO 12345678)', true);
+                    // Validar campos obrigatórios
+                    if (!wo || !coords) {
+                        showStatusMessage('Número WO e coordenadas são obrigatórios', true);
                         return;
                     }
                     
@@ -650,47 +696,65 @@
                         return;
                     }
                     
-                    // Verificar se WO já existe
-                    if (markers[wo]) {
-                        showStatusMessage('WO já existe no sistema', true);
-                        return;
-                    }
-                    
-                    // Obter prioridade
+                    // Obter outros campos
+                    const pdo = document.getElementById('new-pdo').value.trim();
+                    const desc = document.getElementById('new-desc').value.trim();
                     let priority = null;
+                    
                     if (document.getElementById('new-priority-critica').checked) {
                         priority = 'critica';
                     } else if (document.getElementById('new-priority-major').checked) {
                         priority = 'major';
                     }
                     
-                    // Criar novo objeto de localização
-                    const newLocation = {
-                        wo: wo.toUpperCase(),
-                        pdo: pdo,
-                        descricao: desc,
+                    // Criar objeto de localização
+                    const locationData = {
+                        wo: wo,
+                        pdo: pdo || null,
+                        descricao: desc || null,
                         lat: lat,
                         lng: lng,
-                        status: 'aberta',
+                        status: editMode ? markers[woBeingEdited].location.status : 'aberta',
                         priority: priority,
-                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                     };
                     
                     try {
-                        // Adicionar ao Firestore
-                        await db.collection('locations').doc(wo).set(newLocation);
-                        showStatusMessage('WO adicionada com sucesso!');
-                        
-                        // Limpar formulário
-                        document.getElementById('new-wo').value = '';
-                        document.getElementById('new-pdo').value = '';
-                        document.getElementById('new-desc').value = '';
-                        document.getElementById('new-coords').value = '';
-                        document.getElementById('new-priority-critica').checked = false;
-                        document.getElementById('new-priority-major').checked = false;
+                        if (editMode) {
+                            // Modo edição - atualizar WO existente
+                            if (wo !== woBeingEdited) {
+                                // Se o número WO foi alterado, precisamos criar um novo documento
+                                await db.collection('locations').doc(wo).set(locationData);
+                                await db.collection('locations').doc(woBeingEdited).delete();
+                            } else {
+                                // Atualizar documento existente
+                                await db.collection('locations').doc(wo).update(locationData);
+                            }
+                            
+                            showStatusMessage(`WO ${wo} atualizada com sucesso!`);
+                            cancelEdit();
+                        } else {
+                            // Modo adição - criar nova WO
+                            if (markers[wo]) {
+                                showStatusMessage('WO já existe no sistema', true);
+                                return;
+                            }
+                            
+                            locationData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+                            await db.collection('locations').doc(wo).set(locationData);
+                            showStatusMessage('WO adicionada com sucesso!');
+                            
+                            // Limpar formulário
+                            woInput.value = '';
+                            document.getElementById('new-pdo').value = '';
+                            document.getElementById('new-desc').value = '';
+                            coordsInput.value = '';
+                            document.getElementById('new-priority-critica').checked = false;
+                            document.getElementById('new-priority-major').checked = false;
+                        }
                     } catch (error) {
-                        console.error("Erro ao adicionar WO:", error);
-                        showStatusMessage('Erro ao adicionar WO', true);
+                        console.error("Erro ao salvar WO:", error);
+                        showStatusMessage('Erro ao salvar WO', true);
                     }
                 });
                 
