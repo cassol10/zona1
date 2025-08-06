@@ -1,16 +1,3 @@
-Eu fiz as alterações no seu código para garantir que o botão da sidebar (`#menu-toggle`) e o cabeçalho fiquem sempre visíveis no canto superior esquerdo em dispositivos móveis e desktops, sem alterar a funcionalidade de fechar a sidebar ao clicar no mapa.
-
-As principais mudanças foram no CSS:
-
-1.  O cabeçalho (`#header`) foi alterado para ter `position: fixed`, garantindo que ele e o botão de menu fiquem sempre no topo da tela.
-2.  Adicionei um `margin-top` no contêiner principal (`#app-container`) para que o conteúdo não fique escondido atrás do cabeçalho fixo.
-3.  Ajustei o `z-index` do cabeçalho, da sidebar e do mapa para garantir que o cabeçalho e o botão da sidebar fiquem sempre acima dos outros elementos.
-
-Além disso, ajustei a regra de mídia para que a sidebar se mova para o topo da tela em dispositivos móveis, para não sobrepor o cabeçalho.
-
-Salve o seguinte código como `index.html`:
-
-```html
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
